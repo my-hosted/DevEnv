@@ -26,11 +26,11 @@ DevEnv 使用你本来就在使用的 Shell 和开发工具。项目依赖仍需
 
 ## 下载与安装
 
-可下载的预览版本为 [`v0.2.4` Private Preview（Build 10）](https://github.com/zh826256645/DevEnv/releases/tag/v0.2.4)，面向受邀测试者，尚不属于稳定正式版。
+可下载的预览版本为 [`v0.2.4` Private Preview（Build 10）](https://github.com/my-hosted/DevEnv/releases/tag/v0.2.4)，面向受邀测试者，尚不属于稳定正式版。
 
 发布版要求 **macOS 15.0 及以上、Apple Silicon（arm64）**，不包含 Intel 构建。
 
-1. 从 [v0.2.4 Release](https://github.com/zh826256645/DevEnv/releases/tag/v0.2.4) 下载 `DevEnv-0.2.4-arm64.dmg` 和 `DevEnv-0.2.4-arm64.dmg.sha256`。
+1. 从 [v0.2.4 Release](https://github.com/my-hosted/DevEnv/releases/tag/v0.2.4) 下载 `DevEnv-0.2.4-arm64.dmg` 和 `DevEnv-0.2.4-arm64.dmg.sha256`。
 2. 将两个文件放在同一目录，在该目录打开终端并执行：
 
    ```bash
@@ -130,7 +130,7 @@ DevEnv 会静态读取项目清单和版本文件，识别常见运行时、包�
 需要 macOS 15 或更高版本、支持 Swift 6 的 Xcode，以及首次解析 SwiftTerm 依赖时的 GitHub 网络访问。
 
 ```bash
-git clone https://github.com/zh826256645/DevEnv.git
+git clone https://github.com/my-hosted/DevEnv.git
 cd DevEnv
 git switch develop
 open DevEnv.xcodeproj
@@ -144,7 +144,7 @@ open DevEnv.xcodeproj
 
 ## 参与项目
 
-Bug、功能需求和设计讨论请提交到 [GitHub Issues](https://github.com/zh826256645/DevEnv/issues)，代码变更可通过 [Pull Requests](https://github.com/zh826256645/DevEnv/pulls) 提交。版本历史和后续计划以 Git 提交与 GitHub Issues 为准，构建与发布流程见 [发版流程](docs/releasing.md)。
+Bug、功能需求和设计讨论请提交到 [GitHub Issues](https://github.com/my-hosted/DevEnv/issues)，代码变更可通过 [Pull Requests](https://github.com/my-hosted/DevEnv/pulls) 提交。版本历史和后续计划以 Git 提交与 GitHub Issues 为准，构建与发布流程见 [发版流程](docs/releasing.md)。
 
 README 截图统一保存在 `docs/images/readme/`。更新截图时沿用 `run-workspace.png`、`create-run-configuration.png` 和 `project-requirements.png`，即可保持引用有效；截图中请隐去私人路径和敏感信息。
 

@@ -20,7 +20,7 @@
 
 macOS 27 新增的菜单图标显示属性通过运行时访问，使旧 SDK 可以继续编译；正式产物在 macOS 27 本机验证该属性及运行状态。依赖锁与 schema 8 不变。安装包、校验文件、dSYM、源码 SHA 及日志保存至少 90 天。发布采用不可移动 annotated Tag、Draft Prerelease 附件下载复验、随后发布的流程。
 
-v0.2.3 已于 2026-10-06 发布为 Prerelease。annotated Tag 指向 master 合并提交 `f60419669599dd26369511cc1270b13592ec2212`（[PR #103](https://github.com/zh826256645/DevEnv/pull/103)），候选和合并提交分别通过四组发布契约、285 项 XCTest 和 Release 构建；正式 DMG 与 Draft 附件回下载复验全部通过。DMG SHA-256 为 `36b6bd9bdd93bfe7329dadbbd210bfd8deda96ce1ed0c6ca35aa60b45a6df001`。[Release](https://github.com/zh826256645/DevEnv/releases/tag/v0.2.3) 提供安装包及校验文件；本地证据保留至少 90 天，已恢复 develop 与原有未跟踪文件。
+v0.2.3 已于 2026-10-06 发布为 Prerelease。annotated Tag 指向 master 合并提交 `f60419669599dd26369511cc1270b13592ec2212`（[PR #103](https://github.com/my-hosted/DevEnv/pull/103)），候选和合并提交分别通过四组发布契约、285 项 XCTest 和 Release 构建；正式 DMG 与 Draft 附件回下载复验全部通过。DMG SHA-256 为 `36b6bd9bdd93bfe7329dadbbd210bfd8deda96ce1ed0c6ca35aa60b45a6df001`。[Release](https://github.com/my-hosted/DevEnv/releases/tag/v0.2.3) 提供安装包及校验文件；本地证据保留至少 90 天，已恢复 develop 与原有未跟踪文件。
 
 ### v0.2.4（Build 10）本地构建与发布例外
 
@@ -28,7 +28,7 @@ v0.2.3 已于 2026-10-06 发布为 Prerelease。annotated Tag 指向 master 合�
 
 正式产物必须从 `develop → master` 的精确合并提交重新验证和构建。依赖锁与 schema 8 不变，保留源码 SHA、工具链、日志、dSYM、安装包与校验文件至少 90 天。验证后创建不可移动 annotated Tag，上传 Draft Prerelease，下载附件复验后按本次发版授权发布。
 
-v0.2.4 已于 2026-10-19 发布为 Prerelease。annotated Tag 指向 master 合并提交 `84320283942a922f84507c314dd916137820d638`（[PR #106](https://github.com/zh826256645/DevEnv/pull/106)）；候选和精确合并提交分别通过四组发布契约、287 项 XCTest 与 arm64 Release 构建。正式 DMG 与 Draft 附件回下载复验全部通过。DMG SHA-256 为 `599c2456aad9a60ec3997a80eb64a05b9e85fc44916ec780b81432d8c408e8dd`。[Release](https://github.com/zh826256645/DevEnv/releases/tag/v0.2.4) 提供安装包及校验文件；本地保留产物、dSYM 与完整验收证据至少 90 天。
+v0.2.4 已于 2026-10-19 发布为 Prerelease。annotated Tag 指向 master 合并提交 `84320283942a922f84507c314dd916137820d638`（[PR #106](https://github.com/my-hosted/DevEnv/pull/106)）；候选和精确合并提交分别通过四组发布契约、287 项 XCTest 与 arm64 Release 构建。正式 DMG 与 Draft 附件回下载复验全部通过。DMG SHA-256 为 `599c2456aad9a60ec3997a80eb64a05b9e85fc44916ec780b81432d8c408e8dd`。[Release](https://github.com/my-hosted/DevEnv/releases/tag/v0.2.4) 提供安装包及校验文件；本地保留产物、dSYM 与完整验收证据至少 90 天。
 
 1. 在 `develop` 更新版本、Build、工作流锁定值和 Release Notes，提交并推送。
 2. 运行四组 `scripts/tests/*-contract-tests.sh` 发布契约测试及完整 XCTest，记录候选 SHA。只有已明确授权使用本地验证替代 Hosted CI，且本地验证通过时，才允许合并 `develop → master` Release PR；在 PR 记录替代原因和证据，不修改失败 CI 的结果。
@@ -60,10 +60,10 @@ v0.2.4 已于 2026-10-19 发布为 Prerelease。annotated Tag 指向 master 合�
 
 执行规划由 GitHub 原生父子任务和依赖关系跟踪：
 
-- [v0.1.0 Milestone](https://github.com/zh826256645/DevEnv/milestone/1)
-- [发布 v0.1.0 Private Preview（#68）](https://github.com/zh826256645/DevEnv/issues/68)
+- [v0.1.0 Milestone](https://github.com/my-hosted/DevEnv/milestone/1)
+- [发布 v0.1.0 Private Preview（#68）](https://github.com/my-hosted/DevEnv/issues/68)
 - [v0.1.0 中文 Release Notes](releases/v0.1.0.md)
-- [后续接入 Developer ID、公证与 Stapling（#77）](https://github.com/zh826256645/DevEnv/issues/77)
+- [后续接入 Developer ID、公证与 Stapling（#77）](https://github.com/my-hosted/DevEnv/issues/77)
 
 ## 1. 版本定位
 
