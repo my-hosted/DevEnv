@@ -1379,4 +1379,32 @@ final class ProjectRecordsTests: XCTestCase {
         XCTAssertTrue(model.staleProjectIDs.contains(try XCTUnwrap(model.records.first).id))
         XCTAssertEqual(model.projectNotices[try XCTUnwrap(model.records.first).id]?.first?.message, "package.json 格式无效")
     }
+
+    // MARK: - RunTileOrder
+
+    private func tileConfiguration(_ id: String) -> ProjectRunConfiguration {
+        ProjectRunConfiguration(id: id, name: id, command: "run", workingDirectory: ".")
+    }
+
+    func testRunTileOrderKeepsStoredOrderAndAppendsUnseenConfigurations() {
+        let visible = [tileConfiguration("a"), tileConfiguration("b"), tileConfiguration("c"), tileConfiguration("d")]
+        // "c" appears first via the stored order; "d" is not stored yet and is appended afterwards.
+        let arranged = RunTileOrder.arrange(visible, storedOrder: ["c", "a", "stale"])
+        XCTAssertEqual(arranged.map(\.id), ["c", "a", "b", "d"])
+    }
+
+    func testRunTileOrderMovingInsertsBeforeTargetInBothDirections() {
+        XCTAssertEqual(RunTileOrder.moving("a", before: "c", in: ["a", "b", "c", "d"]), ["b", "a", "c", "d"])
+        XCTAssertEqual(RunTileOrder.moving("d", before: "b", in: ["a", "b", "c", "d"]), ["a", "d", "b", "c"])
+        XCTAssertEqual(RunTileOrder.moving("a", before: "a", in: ["a", "b"]), ["a", "b"])
+        XCTAssertEqual(RunTileOrder.moving("x", before: "a", in: ["a", "b"]), ["a", "b"])
+    }
+
+    func testRunTileOrderDeletionKeepsRemainingRelativeOrder() {
+        let storedOrder = ["c", "a", "b"]
+        // "a" is deleted: only the surviving configurations remain, in their previous relative order.
+        let remaining = [tileConfiguration("b"), tileConfiguration("c")]
+        XCTAssertEqual(RunTileOrder.arrange(remaining, storedOrder: storedOrder).map(\.id), ["c", "b"])
+        XCTAssertEqual(RunTileOrder.pruning(storedOrder, to: ["b", "c"]), ["c", "b"])
+    }
 }

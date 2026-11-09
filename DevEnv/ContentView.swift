@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 enum AppAppearance: String, CaseIterable {
     case light
@@ -767,6 +768,10 @@ struct ContentView: View {
     @State private var runResizeStartWidth: CGFloat?
     @State private var isRunSplitterHovering = false
     @State private var expandedTerminalConfiguration: ProjectRunConfiguration?
+    @State private var isRunTiled = false
+    @AppStorage("runTiledCardsPerRow") private var runTiledCardsPerRow = 3
+    @State private var runTileOrder: [String] = []
+    @State private var draggingRunConfigurationID: String?
     @State private var runSearchText = ""
     @State private var runStatusFilter = RunListStatusFilter.all
     @State private var runDetailTab = "终端"
@@ -1306,6 +1311,7 @@ struct ContentView: View {
     private func selectPage(_ page: Page) {
         let previousPage = selectedPage
         if previousPage == .projects, page != .projects { projectsModel.leaveProjects() }
+        if page != .runs { isRunTiled = false }
         selectedPage = page
         if page == .projects, previousPage != .projects {
             projectsModel.enterProjects()
@@ -1627,7 +1633,22 @@ struct ContentView: View {
         .padding(.horizontal, 24)
         .padding(.bottom, 24)
         .background(AppTheme.canvas)
-        .onAppear(perform: selectFirstRunConfigurationIfNeeded)
+        .onAppear {
+            selectFirstRunConfigurationIfNeeded()
+            loadRunTileOrder()
+        }
+        .onChange(of: projectsModel.currentWorkspace.id) { _, _ in
+            loadRunTileOrder()
+            draggingRunConfigurationID = nil
+        }
+        .onChange(of: workspaceRunConfigurationIDs) { _, ids in
+            let existing = Set(ids)
+            let pruned = RunTileOrder.pruning(runTileOrder, to: existing)
+            if pruned != runTileOrder {
+                runTileOrder = pruned
+                persistRunTileOrder()
+            }
+        }
         .onChange(of: projectsModel.workspaceRecords.map(\.id)) { _, projectIDs in
             if let runProjectFilterID, !projectIDs.contains(runProjectFilterID) {
                 self.runProjectFilterID = nil
@@ -1667,6 +1688,8 @@ struct ContentView: View {
                 workspaceTabs
                 runStorageErrorView(storageError)
             }
+        } else if isRunTiled {
+            runTiledContent
         } else {
             GeometryReader { geometry in
                 let totalWidth = geometry.size.width
@@ -1744,6 +1767,266 @@ struct ContentView: View {
         )
         .accessibilityLabel("调整运行配置列表与详情的宽度")
         .accessibilityHint("左右拖动以调整两侧宽度")
+    }
+
+    // MARK: - 运行配置平铺
+
+    private let runTileCardHeight: CGFloat = 320
+    private let runTiledMinimumCardsPerRow = 1
+    private let runTiledMaximumCardsPerRow = 6
+
+    private var workspaceRunConfigurationIDs: [String] {
+        projectsModel.document.runConfigurations
+            .filter { $0.workspaceID == projectsModel.currentWorkspace.id }
+            .map(\.id)
+    }
+
+    private var runTileOrderStorageKey: String {
+        "runTileOrder.\(projectsModel.currentWorkspace.id)"
+    }
+
+    private var tiledColumnCount: Int {
+        min(max(runTiledCardsPerRow, runTiledMinimumCardsPerRow), runTiledMaximumCardsPerRow)
+    }
+
+    private var tiledColumns: [GridItem] {
+        Array(repeating: GridItem(.flexible(), spacing: 12, alignment: .top), count: tiledColumnCount)
+    }
+
+    private var tiledRunConfigurations: [ProjectRunConfiguration] {
+        RunTileOrder.arrange(visibleRunConfigurations, storedOrder: runTileOrder)
+    }
+
+    private func loadRunTileOrder() {
+        runTileOrder = UserDefaults.standard.stringArray(forKey: runTileOrderStorageKey) ?? []
+        if runTiledCardsPerRow != tiledColumnCount {
+            runTiledCardsPerRow = tiledColumnCount
+        }
+    }
+
+    private func persistRunTileOrder() {
+        UserDefaults.standard.set(runTileOrder, forKey: runTileOrderStorageKey)
+    }
+
+    private func moveTiledConfiguration(_ draggedID: String, before targetID: String) {
+        let current = tiledRunConfigurations.map(\.id)
+        let updated = RunTileOrder.moving(draggedID, before: targetID, in: current)
+        guard updated != current else { return }
+        runTileOrder = updated
+        persistRunTileOrder()
+    }
+
+    private func openRunConfigurationDetail(_ configuration: ProjectRunConfiguration) {
+        selectedRunConfigurationID = configuration.id
+        isRunDetailVisible = true
+        withAnimation(.easeInOut(duration: 0.18)) { isRunTiled = false }
+    }
+
+    private var runTiledContent: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            runTiledToolbar
+            if visibleRunConfigurations.isEmpty {
+                ContentUnavailableView {
+                    Label(workspaceRunConfigurations.isEmpty ? "没有运行配置" : "没有匹配的运行配置", systemImage: "play.rectangle")
+                } description: {
+                    Text(workspaceRunConfigurations.isEmpty ? runEmptyDescription : "试试其他关键词或筛选条件。")
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    LazyVGrid(columns: tiledColumns, alignment: .leading, spacing: 12) {
+                        ForEach(tiledRunConfigurations) { configuration in
+                            runTileCard(configuration)
+                        }
+                    }
+                    .padding(.bottom, 8)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .sheet(item: $expandedTerminalConfiguration) { expandedTerminalView($0) }
+    }
+
+    private var runTiledToolbar: some View {
+        HStack(spacing: 12) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.18)) { isRunTiled = false }
+            } label: {
+                Label("返回列表", systemImage: "list.bullet")
+            }
+            .buttonStyle(.bordered)
+            .help("返回运行配置列表与详情")
+            VStack(alignment: .leading, spacing: 1) {
+                Text("运行配置平铺").font(.headline)
+                Text("\(visibleRunConfigurations.count) 个配置 · 拖拽卡片可调整顺序")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+            HStack(spacing: 8) {
+                Image(systemName: "square.grid.3x2")
+                    .foregroundStyle(.secondary)
+                Text("每行").font(.callout).foregroundStyle(.secondary)
+                Stepper(value: $runTiledCardsPerRow, in: runTiledMinimumCardsPerRow...runTiledMaximumCardsPerRow) {
+                    Text("\(tiledColumnCount)")
+                        .font(.callout.monospacedDigit())
+                        .frame(minWidth: 14)
+                }
+                .fixedSize()
+                Text("个").font(.callout).foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(AppTheme.cardSurface, in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(AppTheme.accent.opacity(0.10)))
+    }
+
+    private func runTileCard(_ configuration: ProjectRunConfiguration) -> some View {
+        let project = configuration.associatedProject(in: projectsModel.records)
+        let session = runCoordinator.session(for: configuration.id)
+        let state = session?.state ?? .inactive
+        let hasOutput = session?.hasTerminal == true
+        let expandedElsewhere = expandedTerminalConfiguration?.id == configuration.id
+        let isDragging = draggingRunConfigurationID == configuration.id
+        return VStack(spacing: 0) {
+            runTileCardHeader(configuration, project: project, state: state)
+            Divider().opacity(0.5)
+            runTileCardTerminal(
+                configuration,
+                session: session,
+                hasOutput: hasOutput,
+                expandedElsewhere: expandedElsewhere
+            )
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: runTileCardHeight)
+        .background(AppTheme.cardRaised)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(AppTheme.accent.opacity(0.12)))
+        .shadow(color: Color.black.opacity(isDragging ? 0.18 : 0.05), radius: isDragging ? 10 : 5, x: 0, y: isDragging ? 4 : 2)
+        .opacity(isDragging ? 0.9 : 1)
+        .contextMenu { runConfigurationMenu(configuration) }
+        .onDrop(
+            of: [UTType.text],
+            delegate: RunTileDropDelegate(
+                targetID: configuration.id,
+                draggingID: $draggingRunConfigurationID,
+                move: { dragged, target in moveTiledConfiguration(dragged, before: target) }
+            )
+        )
+    }
+
+    private func runTileCardHeader(
+        _ configuration: ProjectRunConfiguration,
+        project: ProjectRecord?,
+        state: ProjectRunSessionState
+    ) -> some View {
+        let projectUnavailable = (configuration.projectID != nil && project == nil) || project?.availability.isUnavailable == true
+        return HStack(spacing: 8) {
+            Image(systemName: "line.3.horizontal")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(.secondary)
+                .frame(width: 16, height: 26)
+                .contentShape(Rectangle())
+                .help("拖动以调整排列")
+                .onDrag {
+                    draggingRunConfigurationID = configuration.id
+                    return NSItemProvider(object: configuration.id as NSString)
+                }
+                .accessibilityLabel("拖动 \(configuration.name) 调整排列")
+            runConfigurationLogo(configuration, size: 22)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(configuration.name)
+                    .font(.system(size: 13, weight: .semibold))
+                    .lineLimit(1)
+                Text(project?.title ?? (configuration.projectID == nil ? "独立运行" : configuration.missingProjectTitle))
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 4)
+            projectRunStatusBadge(state, isEnabled: configuration.isEnabled)
+            HStack(spacing: 2) {
+                Button {
+                    if state.isLive { runCoordinator.stopOrCloseTerminal(configurationID: configuration.id) }
+                    else { run(configuration, project: project) }
+                } label: {
+                    Image(systemName: state.isLive ? state.stopActionSymbol : "play.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(state.isLive ? Color.red : AppTheme.accent)
+                .disabled(state == .stopping || (!state.isLive && (!configuration.isEnabled || projectUnavailable)))
+                .help(state == .ready ? "关闭终端" : (state.isLive ? "停止运行" : "启动运行"))
+                .accessibilityLabel("\(state.isLive ? state.stopActionTitle : "启动") \(configuration.name)")
+
+                Button {
+                    openRunConfigurationDetail(configuration)
+                } label: {
+                    Image(systemName: "info.circle")
+                        .font(.system(size: 12, weight: .semibold))
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help("查看配置详情")
+                .accessibilityLabel("查看 \(configuration.name) 的详情")
+
+                Menu {
+                    runConfigurationMenu(configuration)
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 12, weight: .semibold))
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
+                }
+                .menuStyle(.button)
+                .buttonStyle(.plain)
+                .menuIndicator(.hidden)
+                .frame(width: 24, height: 24)
+                .help("更多操作")
+                .accessibilityLabel("\(configuration.name) 的更多操作")
+            }
+        }
+        .padding(.horizontal, 10)
+        .frame(height: 46)
+    }
+
+    @ViewBuilder
+    private func runTileCardTerminal(
+        _ configuration: ProjectRunConfiguration,
+        session: ProjectRunSession?,
+        hasOutput: Bool,
+        expandedElsewhere: Bool
+    ) -> some View {
+        if let session, hasOutput, !expandedElsewhere {
+            ProjectTerminalView(terminalView: session.terminalView)
+                .id(configuration.id)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityLabel("运行配置 \(configuration.name) 的终端")
+        } else {
+            VStack(spacing: 10) {
+                Image(systemName: "terminal")
+                    .font(.system(size: 24, weight: .light))
+                    .foregroundStyle(.white.opacity(0.5))
+                Text(expandedElsewhere ? "终端已在独立窗口打开" : "终端会话尚未启动")
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.85))
+                    .multilineTextAlignment(.center)
+                if !expandedElsewhere {
+                    Button("打开终端") { runCoordinator.openTerminal(configuration) }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(!configuration.isEnabled || (configuration.projectID != nil && configuration.associatedProject(in: projectsModel.records) == nil))
+                }
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color(red: 0.055, green: 0.065, blue: 0.075))
+        }
     }
 
     private var selectedRunSuggestions: [ProjectRunSuggestion] {
@@ -2244,6 +2527,16 @@ struct ContentView: View {
                 }
                 Spacer(minLength: 0)
                 projectRunStatusBadge(state, isEnabled: configuration.isEnabled)
+                Button {
+                    withAnimation(.easeInOut(duration: 0.18)) { isRunTiled = true }
+                } label: {
+                    Image(systemName: "square.grid.2x2")
+                        .font(.system(size: 12, weight: .semibold))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help("平铺所有运行配置（同时查看多个终端）")
+                .accessibilityLabel("平铺所有运行配置")
                 Button {
                     isRunDetailVisible = false
                 } label: {
@@ -7828,3 +8121,31 @@ func devEnvRuntimeLogo(
         }
         .accessibilityHidden(true)
     }
+
+/// Drop delegate that reorders run configuration cards while dragging.
+///
+/// Reordering happens on `dropEntered` so cards rearrange live as the pointer
+/// moves over them; the actual persistence is handled by the `move` closure.
+struct RunTileDropDelegate: DropDelegate {
+    let targetID: String
+    @Binding var draggingID: String?
+    let move: (String, String) -> Void
+
+    func dropEntered(info _: DropInfo) {
+        guard let draggingID, draggingID != targetID else { return }
+        move(draggingID, targetID)
+    }
+
+    func dropUpdated(info _: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info _: DropInfo) -> Bool {
+        draggingID = nil
+        return true
+    }
+
+    func dropExited(info _: DropInfo) {
+        // Keep `draggingID` until the drag ends so the source card stays dimmed.
+    }
+}
