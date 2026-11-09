@@ -296,12 +296,21 @@ enum RunTileOrder {
     /// Returns the input unchanged when either identity is unknown or when the
     /// two identities are equal.
     static func moving(_ draggedID: String, before targetID: String, in order: [String]) -> [String] {
+        moving(draggedID, to: targetID, after: false, in: order)
+    }
+
+    /// Move `draggedID` to sit immediately before or after `targetID`.
+    ///
+    /// Dropping `after` on the last card is how a card reaches the end of the
+    /// list. The target index is recomputed after the removal so the move is
+    /// correct regardless of drag direction.
+    static func moving(_ draggedID: String, to targetID: String, after: Bool, in order: [String]) -> [String] {
         guard draggedID != targetID,
-              let from = order.firstIndex(of: draggedID),
-              let target = order.firstIndex(of: targetID) else { return order }
+              let from = order.firstIndex(of: draggedID) else { return order }
         var result = order
         result.remove(at: from)
-        let insertionIndex = from < target ? target - 1 : target
+        guard let target = result.firstIndex(of: targetID) else { return order }
+        let insertionIndex = after ? target + 1 : target
         result.insert(draggedID, at: min(max(insertionIndex, 0), result.count))
         return result
     }

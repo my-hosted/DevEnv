@@ -1400,6 +1400,15 @@ final class ProjectRecordsTests: XCTestCase {
         XCTAssertEqual(RunTileOrder.moving("x", before: "a", in: ["a", "b"]), ["a", "b"])
     }
 
+    func testRunTileOrderMovingHonorsDropSide() {
+        let order = ["a", "b", "c", "d"]
+        XCTAssertEqual(RunTileOrder.moving("a", to: "c", after: false, in: order), ["b", "a", "c", "d"])
+        XCTAssertEqual(RunTileOrder.moving("a", to: "c", after: true, in: order), ["b", "c", "a", "d"])
+        XCTAssertEqual(RunTileOrder.moving("d", to: "b", after: true, in: order), ["a", "b", "d", "c"])
+        // Dropping after the last card is how a card reaches the end.
+        XCTAssertEqual(RunTileOrder.moving("a", to: "d", after: true, in: order), ["b", "c", "d", "a"])
+    }
+
     func testRunTileOrderDeletionKeepsRemainingRelativeOrder() {
         let storedOrder = ["c", "a", "b"]
         // "a" is deleted: only the surviving configurations remain, in their previous relative order.

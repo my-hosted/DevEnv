@@ -772,6 +772,9 @@ struct ContentView: View {
     @AppStorage("runTiledCardsPerRow") private var runTiledCardsPerRow = 3
     @State private var runTileOrder: [String] = []
     @State private var draggingRunConfigurationID: String?
+    @State private var runTileDropTargetID: String?
+    @State private var runTileDropAfter = false
+    @State private var fullscreenRunConfigurationID: String?
     @State private var runSearchText = ""
     @State private var runStatusFilter = RunListStatusFilter.all
     @State private var runDetailTab = "终端"
@@ -1311,7 +1314,10 @@ struct ContentView: View {
     private func selectPage(_ page: Page) {
         let previousPage = selectedPage
         if previousPage == .projects, page != .projects { projectsModel.leaveProjects() }
-        if page != .runs { isRunTiled = false }
+        if page != .runs {
+            isRunTiled = false
+            fullscreenRunConfigurationID = nil
+        }
         selectedPage = page
         if page == .projects, previousPage != .projects {
             projectsModel.enterProjects()
@@ -1640,6 +1646,8 @@ struct ContentView: View {
         .onChange(of: projectsModel.currentWorkspace.id) { _, _ in
             loadRunTileOrder()
             draggingRunConfigurationID = nil
+            runTileDropTargetID = nil
+            fullscreenRunConfigurationID = nil
         }
         .onChange(of: workspaceRunConfigurationIDs) { _, ids in
             let existing = Set(ids)
@@ -1647,6 +1655,12 @@ struct ContentView: View {
             if pruned != runTileOrder {
                 runTileOrder = pruned
                 persistRunTileOrder()
+            }
+            if let fullscreenRunConfigurationID, !existing.contains(fullscreenRunConfigurationID) {
+                self.fullscreenRunConfigurationID = nil
+            }
+            if let runTileDropTargetID, !existing.contains(runTileDropTargetID) {
+                self.runTileDropTargetID = nil
             }
         }
         .onChange(of: projectsModel.workspaceRecords.map(\.id)) { _, projectIDs in
@@ -1808,48 +1822,89 @@ struct ContentView: View {
         UserDefaults.standard.set(runTileOrder, forKey: runTileOrderStorageKey)
     }
 
-    private func moveTiledConfiguration(_ draggedID: String, before targetID: String) {
+    private func moveTiledConfiguration(_ draggedID: String, onto targetID: String, after: Bool) {
         let current = tiledRunConfigurations.map(\.id)
-        let updated = RunTileOrder.moving(draggedID, before: targetID, in: current)
+        let updated = RunTileOrder.moving(draggedID, to: targetID, after: after, in: current)
         guard updated != current else { return }
         runTileOrder = updated
         persistRunTileOrder()
     }
 
+    private func toggleRunTileFullscreen(_ configuration: ProjectRunConfiguration) {
+        withAnimation(.easeInOut(duration: 0.18)) {
+            fullscreenRunConfigurationID = fullscreenRunConfigurationID == configuration.id ? nil : configuration.id
+        }
+    }
+
+    private var fullscreenRunTiledConfiguration: ProjectRunConfiguration? {
+        guard let id = fullscreenRunConfigurationID else { return nil }
+        return tiledRunConfigurations.first { $0.id == id }
+    }
+
     private func openRunConfigurationDetail(_ configuration: ProjectRunConfiguration) {
         selectedRunConfigurationID = configuration.id
         isRunDetailVisible = true
+        fullscreenRunConfigurationID = nil
         withAnimation(.easeInOut(duration: 0.18)) { isRunTiled = false }
     }
 
     private var runTiledContent: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            runTiledToolbar
-            if visibleRunConfigurations.isEmpty {
-                ContentUnavailableView {
-                    Label(workspaceRunConfigurations.isEmpty ? "没有运行配置" : "没有匹配的运行配置", systemImage: "play.rectangle")
-                } description: {
-                    Text(workspaceRunConfigurations.isEmpty ? runEmptyDescription : "试试其他关键词或筛选条件。")
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        Group {
+            if let configuration = fullscreenRunTiledConfiguration {
+                runTileFullscreenCard(configuration)
             } else {
-                ScrollView {
-                    LazyVGrid(columns: tiledColumns, alignment: .leading, spacing: 12) {
-                        ForEach(tiledRunConfigurations) { configuration in
-                            runTileCard(configuration)
+                VStack(alignment: .leading, spacing: 12) {
+                    runTiledToolbar
+                    if visibleRunConfigurations.isEmpty {
+                        ContentUnavailableView {
+                            Label(workspaceRunConfigurations.isEmpty ? "没有运行配置" : "没有匹配的运行配置", systemImage: "play.rectangle")
+                        } description: {
+                            Text(workspaceRunConfigurations.isEmpty ? runEmptyDescription : "试试其他关键词或筛选条件。")
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        ScrollView {
+                            LazyVGrid(columns: tiledColumns, alignment: .leading, spacing: 12) {
+                                ForEach(tiledRunConfigurations) { configuration in
+                                    runTileCard(configuration)
+                                }
+                            }
+                            .padding(.bottom, 8)
                         }
                     }
-                    .padding(.bottom, 8)
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .sheet(item: $expandedTerminalConfiguration) { expandedTerminalView($0) }
+    }
+
+    private func runTileFullscreenCard(_ configuration: ProjectRunConfiguration) -> some View {
+        let project = configuration.associatedProject(in: projectsModel.records)
+        let session = runCoordinator.session(for: configuration.id)
+        let state = session?.state ?? .inactive
+        let hasOutput = session?.hasTerminal == true
+        return VStack(spacing: 0) {
+            runTileCardHeader(configuration, project: project, state: state, fullscreen: true)
+            Divider().opacity(0.5)
+            runTileCardTerminal(
+                configuration,
+                session: session,
+                hasOutput: hasOutput,
+                expandedElsewhere: expandedTerminalConfiguration?.id == configuration.id
+            )
+        }
+        .background(AppTheme.cardRaised)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(AppTheme.accent.opacity(0.12)))
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onExitCommand { fullscreenRunConfigurationID = nil }
     }
 
     private var runTiledToolbar: some View {
         HStack(spacing: 12) {
             Button {
+                fullscreenRunConfigurationID = nil
                 withAnimation(.easeInOut(duration: 0.18)) { isRunTiled = false }
             } label: {
                 Label("返回列表", systemImage: "list.bullet")
@@ -1858,7 +1913,7 @@ struct ContentView: View {
             .help("返回运行配置列表与详情")
             VStack(alignment: .leading, spacing: 1) {
                 Text("运行配置平铺").font(.headline)
-                Text("\(visibleRunConfigurations.count) 个配置 · 拖拽卡片可调整顺序")
+                Text("\(visibleRunConfigurations.count) 个配置 · 拖拽卡片到目标位置松手即可调整顺序")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
@@ -1882,12 +1937,19 @@ struct ContentView: View {
     }
 
     private func runTileCard(_ configuration: ProjectRunConfiguration) -> some View {
+        GeometryReader { geometry in
+            runTileCardBody(configuration, cardWidth: geometry.size.width)
+        }
+        .frame(height: runTileCardHeight)
+    }
+
+    private func runTileCardBody(_ configuration: ProjectRunConfiguration, cardWidth: CGFloat) -> some View {
         let project = configuration.associatedProject(in: projectsModel.records)
         let session = runCoordinator.session(for: configuration.id)
         let state = session?.state ?? .inactive
         let hasOutput = session?.hasTerminal == true
         let expandedElsewhere = expandedTerminalConfiguration?.id == configuration.id
-        let isDragging = draggingRunConfigurationID == configuration.id
+        let isDropTarget = runTileDropTargetID == configuration.id && draggingRunConfigurationID != configuration.id
         return VStack(spacing: 0) {
             runTileCardHeader(configuration, project: project, state: state)
             Divider().opacity(0.5)
@@ -1904,21 +1966,30 @@ struct ContentView: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay {
             RoundedRectangle(cornerRadius: 12).stroke(AppTheme.accent.opacity(0.12))
-            if isDragging {
-                RoundedRectangle(cornerRadius: 12)
-                    .strokeBorder(AppTheme.accent.opacity(0.7), style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
+        }
+        .overlay(alignment: runTileDropAfter ? .trailing : .leading) {
+            if isDropTarget {
+                Capsule()
+                    .fill(AppTheme.accent)
+                    .frame(width: 4)
+                    .padding(.vertical, 10)
+                    .shadow(color: AppTheme.accent.opacity(0.6), radius: 4)
             }
         }
-        .opacity(isDragging ? 0.3 : 1)
-        .shadow(color: Color.black.opacity(isDragging ? 0.18 : 0.05), radius: isDragging ? 10 : 5, x: 0, y: isDragging ? 4 : 2)
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.12), value: isDragging)
+        .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.12), value: isDropTarget)
         .contextMenu { runConfigurationMenu(configuration) }
         .onDrop(
             of: [UTType.text],
             delegate: RunTileDropDelegate(
                 targetID: configuration.id,
+                cardWidth: cardWidth,
                 draggingID: $draggingRunConfigurationID,
-                move: { dragged, target in moveTiledConfiguration(dragged, before: target) }
+                dropTargetID: $runTileDropTargetID,
+                dropAfter: $runTileDropAfter,
+                move: { dragged, target, after in
+                    moveTiledConfiguration(dragged, onto: target, after: after)
+                }
             )
         )
     }
@@ -1926,23 +1997,26 @@ struct ContentView: View {
     private func runTileCardHeader(
         _ configuration: ProjectRunConfiguration,
         project: ProjectRecord?,
-        state: ProjectRunSessionState
+        state: ProjectRunSessionState,
+        fullscreen: Bool = false
     ) -> some View {
         let projectUnavailable = (configuration.projectID != nil && project == nil) || project?.availability.isUnavailable == true
         return HStack(spacing: 8) {
-            Image(systemName: "line.3.horizontal")
-                .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(.secondary)
-                .frame(width: 16, height: 26)
-                .contentShape(Rectangle())
-                .help("拖动以调整排列")
-                .onDrag {
-                    draggingRunConfigurationID = configuration.id
-                    return NSItemProvider(object: configuration.id as NSString)
-                } preview: {
-                    runTileCardDragPreview(configuration)
-                }
-                .accessibilityLabel("拖动 \(configuration.name) 调整排列")
+            if !fullscreen {
+                Image(systemName: "line.3.horizontal")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 16, height: 26)
+                    .contentShape(Rectangle())
+                    .help("拖动以调整排列")
+                    .onDrag {
+                        draggingRunConfigurationID = configuration.id
+                        return NSItemProvider(object: configuration.id as NSString)
+                    } preview: {
+                        runTileCardDragPreview(configuration)
+                    }
+                    .accessibilityLabel("拖动 \(configuration.name) 调整排列")
+            }
             runConfigurationLogo(configuration, size: 22)
             VStack(alignment: .leading, spacing: 1) {
                 Text(configuration.name)
@@ -1956,6 +2030,19 @@ struct ContentView: View {
             Spacer(minLength: 4)
             projectRunStatusBadge(state, isEnabled: configuration.isEnabled)
             HStack(spacing: 2) {
+                Button {
+                    toggleRunTileFullscreen(configuration)
+                } label: {
+                    Image(systemName: fullscreen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help(fullscreen ? "退出全屏" : "全屏显示该配置")
+                .accessibilityLabel(fullscreen ? "退出全屏" : "全屏显示 \(configuration.name)")
+
                 Button {
                     if state.isLive { runCoordinator.stopOrCloseTerminal(configurationID: configuration.id) }
                     else { run(configuration, project: project) }
@@ -8168,30 +8255,47 @@ func devEnvRuntimeLogo(
         .accessibilityHidden(true)
     }
 
-/// Drop delegate that reorders run configuration cards while dragging.
+/// Drop delegate for the run configuration tile grid.
 ///
-/// Reordering happens on `dropEntered` so cards rearrange live as the pointer
-/// moves over them; the actual persistence is handled by the `move` closure.
+/// The grid does not reorder cards while the pointer moves. Instead it records
+/// which card (and which side) is under the pointer and only commits the move
+/// when the user releases the drag, so the result matches the drop position.
 struct RunTileDropDelegate: DropDelegate {
     let targetID: String
+    let cardWidth: CGFloat
     @Binding var draggingID: String?
-    let move: (String, String) -> Void
+    @Binding var dropTargetID: String?
+    @Binding var dropAfter: Bool
+    let move: (String, String, Bool) -> Void
 
-    func dropEntered(info _: DropInfo) {
-        guard let draggingID, draggingID != targetID else { return }
-        move(draggingID, targetID)
+    private func updateTarget(_ info: DropInfo) {
+        guard let draggingID, draggingID != targetID else {
+            if dropTargetID == targetID { dropTargetID = nil }
+            return
+        }
+        if dropTargetID != targetID { dropTargetID = targetID }
+        let newAfter = info.location.x > cardWidth / 2
+        if dropAfter != newAfter { dropAfter = newAfter }
     }
 
-    func dropUpdated(info _: DropInfo) -> DropProposal? {
-        DropProposal(operation: .move)
+    func dropEntered(info: DropInfo) { updateTarget(info) }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        updateTarget(info)
+        return DropProposal(operation: .move)
     }
 
     func performDrop(info _: DropInfo) -> Bool {
-        draggingID = nil
+        defer {
+            draggingID = nil
+            dropTargetID = nil
+        }
+        guard let draggingID, draggingID != targetID else { return false }
+        move(draggingID, targetID, dropAfter)
         return true
     }
 
     func dropExited(info _: DropInfo) {
-        // Keep `draggingID` until the drag ends so the source card stays dimmed.
+        if dropTargetID == targetID { dropTargetID = nil }
     }
 }
