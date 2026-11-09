@@ -262,6 +262,66 @@ struct ProjectRunConfiguration: Codable, Identifiable, Equatable, Sendable {
     }
 }
 
+/// Pure ordering helpers for the run configuration tile grid.
+///
+/// Tiling is a display-only preference: the stored order is a list of
+/// configuration identities scoped to one workspace and never alters the
+/// persisted `ProjectRunConfiguration` model itself.
+enum RunTileOrder {
+    /// Merge a persisted order with the currently visible configurations.
+    ///
+    /// Identities that still exist keep their stored relative order; any
+    /// configuration missing from `storedOrder` is appended in the order it
+    /// appears in `visible`. A deleted configuration simply drops out while
+    /// the remaining cards keep the order they had before deletion.
+    static func arrange(
+        _ visible: [ProjectRunConfiguration],
+        storedOrder: [String]
+    ) -> [ProjectRunConfiguration] {
+        let byID = Dictionary(visible.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var result: [ProjectRunConfiguration] = []
+        var used: Set<String> = []
+        for id in storedOrder {
+            guard let configuration = byID[id], used.insert(id).inserted else { continue }
+            result.append(configuration)
+        }
+        for configuration in visible where used.insert(configuration.id).inserted {
+            result.append(configuration)
+        }
+        return result
+    }
+
+    /// Move `draggedID` to sit immediately before `targetID` in `order`.
+    ///
+    /// Returns the input unchanged when either identity is unknown or when the
+    /// two identities are equal.
+    static func moving(_ draggedID: String, before targetID: String, in order: [String]) -> [String] {
+        moving(draggedID, to: targetID, after: false, in: order)
+    }
+
+    /// Move `draggedID` to sit immediately before or after `targetID`.
+    ///
+    /// Dropping `after` on the last card is how a card reaches the end of the
+    /// list. The target index is recomputed after the removal so the move is
+    /// correct regardless of drag direction.
+    static func moving(_ draggedID: String, to targetID: String, after: Bool, in order: [String]) -> [String] {
+        guard draggedID != targetID,
+              let from = order.firstIndex(of: draggedID) else { return order }
+        var result = order
+        result.remove(at: from)
+        guard let target = result.firstIndex(of: targetID) else { return order }
+        let insertionIndex = after ? target + 1 : target
+        result.insert(draggedID, at: min(max(insertionIndex, 0), result.count))
+        return result
+    }
+
+    /// Drop identities that no longer exist so a deleted configuration does not
+    /// keep an empty slot in the stored order.
+    static func pruning(_ order: [String], to existingIDs: Set<String>) -> [String] {
+        order.filter(existingIDs.contains)
+    }
+}
+
 struct ProjectRunSuggestion: Equatable, Identifiable, Sendable {
     let id: String
     let projectID: String
