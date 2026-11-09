@@ -1902,9 +1902,16 @@ struct ContentView: View {
         .frame(height: runTileCardHeight)
         .background(AppTheme.cardRaised)
         .clipShape(RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(AppTheme.accent.opacity(0.12)))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12).stroke(AppTheme.accent.opacity(0.12))
+            if isDragging {
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(AppTheme.accent.opacity(0.7), style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
+            }
+        }
+        .opacity(isDragging ? 0.3 : 1)
         .shadow(color: Color.black.opacity(isDragging ? 0.18 : 0.05), radius: isDragging ? 10 : 5, x: 0, y: isDragging ? 4 : 2)
-        .opacity(isDragging ? 0.9 : 1)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.12), value: isDragging)
         .contextMenu { runConfigurationMenu(configuration) }
         .onDrop(
             of: [UTType.text],
@@ -1932,6 +1939,8 @@ struct ContentView: View {
                 .onDrag {
                     draggingRunConfigurationID = configuration.id
                     return NSItemProvider(object: configuration.id as NSString)
+                } preview: {
+                    runTileCardDragPreview(configuration)
                 }
                 .accessibilityLabel("拖动 \(configuration.name) 调整排列")
             runConfigurationLogo(configuration, size: 22)
@@ -2027,6 +2036,43 @@ struct ContentView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color(red: 0.055, green: 0.065, blue: 0.075))
         }
+    }
+
+    /// A lightweight floating snapshot of the card shown under the cursor while
+    /// dragging, so the user can see the card being moved and where it will land.
+    private func runTileCardDragPreview(_ configuration: ProjectRunConfiguration) -> some View {
+        let project = configuration.associatedProject(in: projectsModel.records)
+        let state = runCoordinator.session(for: configuration.id)?.state ?? .inactive
+        return VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                runConfigurationLogo(configuration, size: 22)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(configuration.name)
+                        .font(.system(size: 13, weight: .semibold))
+                        .lineLimit(1)
+                    Text(project?.title ?? (configuration.projectID == nil ? "独立运行" : configuration.missingProjectTitle))
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                projectRunStatusBadge(state, isEnabled: configuration.isEnabled)
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 46)
+            Divider().opacity(0.5)
+            ZStack {
+                Color(red: 0.055, green: 0.065, blue: 0.075)
+                Image(systemName: "terminal")
+                    .font(.system(size: 24, weight: .light))
+                    .foregroundStyle(.white.opacity(0.45))
+            }
+        }
+        .frame(width: 300, height: 190)
+        .background(AppTheme.cardRaised)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(AppTheme.accent.opacity(0.45), lineWidth: 1.5))
+        .shadow(color: Color.black.opacity(0.28), radius: 14, x: 0, y: 8)
     }
 
     private var selectedRunSuggestions: [ProjectRunSuggestion] {
