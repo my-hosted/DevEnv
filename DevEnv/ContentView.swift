@@ -1374,62 +1374,8 @@ struct ContentView: View {
 
     private var workspaceNavigation: some View {
         HStack(spacing: 12) {
-            Text("工作区").font(.system(size: 29, weight: .bold)).fixedSize()
-            HStack(spacing: 8) {
-                runConfigurationIcon(size: 22)
-                Menu {
-                    ForEach(projectsModel.document.workspaces) { workspace in
-                        Button {
-                            _ = projectsModel.selectWorkspace(workspace.id)
-                        } label: {
-                            if workspace.id == projectsModel.currentWorkspace.id {
-                                Label(workspace.name, systemImage: "checkmark")
-                            } else { Text(workspace.name) }
-                        }
-                    }
-                } label: {
-                    Text(projectsModel.document.workspaces.isEmpty ? "无工作区" : projectsModel.currentWorkspace.name)
-                        .fontWeight(.semibold).lineLimit(1)
-                }
-                .menuStyle(.borderlessButton)
-                .frame(maxWidth: 180)
-                .fixedSize(horizontal: true, vertical: false)
-                .accessibilityLabel("切换工作区")
-                if projectsModel.currentWorkspace.id == Workspace.defaultWorkspace.id {
-                    Text("默认").font(.caption.weight(.medium))
-                        .foregroundStyle(AppTheme.accent)
-                        .padding(.horizontal, 8).padding(.vertical, 4)
-                        .background(AppTheme.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
-                }
-            }
-            .padding(.horizontal, 12).frame(height: 44)
-            .background(AppTheme.cardRaised, in: RoundedRectangle(cornerRadius: 8))
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(AppTheme.accent.opacity(0.16)))
-            .disabled(projectsModel.mutationsArePaused)
-            Menu {
-                Button("新建工作区") {
-                    renamingWorkspaceID = nil
-                    workspaceNameDraft = ""
-                    isShowingWorkspaceEditor = true
-                }
-                Button("重命名工作区") {
-                    renamingWorkspaceID = projectsModel.currentWorkspace.id
-                    workspaceNameDraft = projectsModel.currentWorkspace.name
-                    isShowingWorkspaceEditor = true
-                }
-                .disabled(projectsModel.document.workspaces.isEmpty)
-                Button("添加项目…") { chooseProjectDirectories(forBatchScan: false) }
-                    .disabled(projectsModel.document.workspaces.isEmpty || projectsModel.isScanning)
-                Divider()
-                Button("删除工作区", role: .destructive) {
-                    runCoordinator.requestDeletion(workspaceID: projectsModel.currentWorkspace.id)
-                }
-                .disabled(projectsModel.document.workspaces.isEmpty || projectsModel.isScanning || runCoordinator.activeDeletion != nil)
-            } label: {
-                Label("工作区设置", systemImage: "gearshape")
-            }
-            .fixedSize()
-            .disabled(projectsModel.mutationsArePaused)
+            workspaceSwitcher
+            workspaceSettingsMenu
             Spacer(minLength: 0)
             HStack(spacing: 8) {
                 if selectedPage == .runs { runBatchActions }
@@ -1445,6 +1391,83 @@ struct ContentView: View {
         .padding(.horizontal, 24)
         .padding(.top, 22)
         .padding(.bottom, 16)
+    }
+
+    private var workspaceSwitcher: some View {
+        HStack(spacing: 8) {
+            runConfigurationIcon(size: 22)
+            Menu {
+                ForEach(projectsModel.document.workspaces) { workspace in
+                    Button {
+                        _ = projectsModel.selectWorkspace(workspace.id)
+                    } label: {
+                        if workspace.id == projectsModel.currentWorkspace.id {
+                            Label(workspace.name, systemImage: "checkmark")
+                        } else { Text(workspace.name) }
+                    }
+                }
+            } label: {
+                HStack(spacing: 5) {
+                    Text(projectsModel.document.workspaces.isEmpty ? "无工作区" : projectsModel.currentWorkspace.name)
+                        .fontWeight(.semibold).lineLimit(1)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.secondary)
+                }
+                .contentShape(Rectangle())
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .frame(maxWidth: 180)
+            .fixedSize(horizontal: true, vertical: false)
+            .accessibilityLabel("切换工作区")
+            if projectsModel.currentWorkspace.id == Workspace.defaultWorkspace.id {
+                Text("默认").font(.caption.weight(.medium))
+                    .foregroundStyle(AppTheme.accent)
+                    .padding(.horizontal, 8).padding(.vertical, 4)
+                    .background(AppTheme.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+            }
+        }
+        .padding(.horizontal, 12).frame(height: 44)
+        .background(AppTheme.cardRaised, in: RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(AppTheme.accent.opacity(0.16)))
+        .contentShape(Rectangle())
+        .disabled(projectsModel.mutationsArePaused)
+    }
+
+    private var workspaceSettingsMenu: some View {
+        Menu {
+            Button("新建工作区") {
+                renamingWorkspaceID = nil
+                workspaceNameDraft = ""
+                isShowingWorkspaceEditor = true
+            }
+            Button("重命名工作区") {
+                renamingWorkspaceID = projectsModel.currentWorkspace.id
+                workspaceNameDraft = projectsModel.currentWorkspace.name
+                isShowingWorkspaceEditor = true
+            }
+            .disabled(projectsModel.document.workspaces.isEmpty)
+            Button("添加项目…") { chooseProjectDirectories(forBatchScan: false) }
+                .disabled(projectsModel.document.workspaces.isEmpty || projectsModel.isScanning)
+            Divider()
+            Button("删除工作区", role: .destructive) {
+                runCoordinator.requestDeletion(workspaceID: projectsModel.currentWorkspace.id)
+            }
+            .disabled(projectsModel.document.workspaces.isEmpty || projectsModel.isScanning || runCoordinator.activeDeletion != nil)
+        } label: {
+            Label("工作区设置", systemImage: "gearshape")
+                .fontWeight(.medium)
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 12).frame(height: 44)
+                .background(AppTheme.cardRaised, in: RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(AppTheme.accent.opacity(0.16)))
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .disabled(projectsModel.mutationsArePaused)
     }
 
     private var workspaceTabs: some View {
@@ -1743,19 +1766,7 @@ struct ContentView: View {
             }
             if !selectedRunSuggestions.isEmpty {
                 Divider().padding(.horizontal, 14)
-                DisclosureGroup(isExpanded: $isRunSuggestionsExpanded) {
-                    ScrollView {
-                        VStack(spacing: 8) {
-                            ForEach(selectedRunSuggestions) { runSuggestionRow($0) }
-                        }
-                    }
-                    .frame(maxHeight: 150)
-                    .padding(.top, 8)
-                } label: {
-                    Label("运行建议 (\(selectedRunSuggestions.count))", systemImage: "lightbulb")
-                        .font(.subheadline).foregroundStyle(.secondary)
-                }
-                .padding(14)
+                runSuggestionsSection
             }
             HStack {
                 Text("共 \(visibleRunConfigurations.count) 个运行配置")
@@ -1767,6 +1778,43 @@ struct ContentView: View {
         }
         .background(AppTheme.cardSurface, in: RoundedRectangle(cornerRadius: 12))
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(AppTheme.accent.opacity(0.10)))
+    }
+
+    private var runSuggestionsSection: some View {
+        VStack(spacing: 0) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.18)) {
+                    isRunSuggestionsExpanded.toggle()
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(isRunSuggestionsExpanded ? 90 : 0))
+                    Label("运行建议 (\(selectedRunSuggestions.count))", systemImage: "lightbulb")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("运行建议")
+            .accessibilityValue(isRunSuggestionsExpanded ? "已展开" : "已折叠")
+            .accessibilityHint(isRunSuggestionsExpanded ? "折叠运行建议" : "展开运行建议")
+            if isRunSuggestionsExpanded {
+                ScrollView {
+                    VStack(spacing: 8) {
+                        ForEach(selectedRunSuggestions) { runSuggestionRow($0) }
+                    }
+                }
+                .frame(maxHeight: 150)
+                .padding(.horizontal, 14)
+                .padding(.bottom, 14)
+            }
+        }
     }
 
     private var runListFilters: some View {
@@ -1895,7 +1943,7 @@ struct ContentView: View {
             .buttonStyle(.plain)
             .accessibilityLabel("\(configuration.name)，\(configuration.isEnabled ? state.statusTitle : "已禁用")，\(configuration.command)")
             .accessibilityAddTraits(isSelected ? .isSelected : [])
-            HStack(spacing: 6) {
+            HStack(spacing: 4) {
                 Button {
                     if state.isLive { runCoordinator.stopOrCloseTerminal(configurationID: configuration.id) }
                     else { run(configuration, project: project) }
@@ -1910,11 +1958,30 @@ struct ContentView: View {
                 .disabled(state == .stopping || (!state.isLive && (!configuration.isEnabled || (configuration.projectID != nil && project == nil) || project?.availability.isUnavailable == true)))
                 .help(state == .ready ? "关闭终端" : (state.isLive ? "停止运行" : "启动运行"))
                 .accessibilityLabel("\(state.isLive ? state.stopActionTitle : "启动") \(configuration.name)")
-                Menu { runConfigurationMenu(configuration) } label: { Image(systemName: "ellipsis") }
-                    .menuStyle(.borderlessButton).menuIndicator(.hidden)
-                    .frame(width: 26, height: 28)
-                    .foregroundStyle(AppTheme.accent)
-                    .accessibilityLabel("\(configuration.name) 的更多操作")
+                Menu {
+                    runConfigurationMenu(configuration)
+                } label: {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(AppTheme.accent.opacity(0.06))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .stroke(AppTheme.accent.opacity(0.18))
+                            )
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(AppTheme.accent)
+                    }
+                    .frame(width: 28, height: 28)
+                    .contentShape(Rectangle())
+                }
+                .menuStyle(.button)
+                .buttonStyle(.plain)
+                .menuIndicator(.hidden)
+                .frame(width: 28, height: 28)
+                .contentShape(Rectangle())
+                .help("更多操作")
+                .accessibilityLabel("\(configuration.name) 的更多操作")
             }
             .frame(width: 94)
         }
