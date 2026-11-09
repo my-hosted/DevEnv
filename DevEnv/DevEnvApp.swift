@@ -11,6 +11,102 @@ enum DevEnvStatusBarAction: String {
     case showRuns
 }
 
+/// 双击主窗口顶部或左侧导航空白处，让窗口铺满屏幕 / 还原。
+enum WindowFillToggle {
+    /// SwiftUI 在 macOS 上会把交互控件桥接成若干 AppKit 视图；命中这些视图时不触发铺满。
+    /// 名称匹配是启发式判断：匹配不到只会多触发一次铺满，不会损坏窗口。
+    private static let interactiveViewNameHints = [
+        "KeyViewProxy",             // 按钮、开关、滑杆等可聚焦控件
+        "AppKitTextField",          // 文本输入框
+        "ListTableRowView",         // 列表行 / 单元
+        "ListTableCellView",
+        "NSTableRowView",
+        "NSTableCellView",
+        "NSScroller",               // 滚动条
+        "TerminalView",             // 内置终端
+        "ProjectTerminalContainerView",
+    ]
+
+    @MainActor
+    static func toggle(_ window: NSWindow) {
+        guard isFillable(window) else { return }
+        // 用「缩放」而不是原生全屏：让普通窗口铺满可用屏幕区域，再次触发即可还原。
+        window.zoom(nil)
+    }
+
+    /// 判断一次双击是否应触发铺满：只在「顶部条」或「左侧导航空白处」生效，且不落在控件上。
+    @MainActor
+    static func shouldToggle(at pointInWindow: NSPoint, in window: NSWindow) -> Bool {
+        guard isFillable(window), let contentView = window.contentView else { return false }
+        let point = contentView.convert(pointInWindow, from: nil)
+        guard isInEligibleRegion(point, in: window, contentView: contentView) else { return false }
+        return !containsInteractiveControl(at: point, in: contentView, reference: contentView)
+    }
+
+    @MainActor
+    private static func isFillable(_ window: NSWindow) -> Bool {
+        window.styleMask.contains(.titled) && window.sheetParent == nil && !(window is NSPanel)
+    }
+
+    /// 顶部窗口条，或左侧导航区域。
+    @MainActor
+    private static func isInEligibleRegion(_ point: NSPoint, in window: NSWindow, contentView: NSView) -> Bool {
+        let yFromTop = contentView.isFlipped ? point.y : contentView.bounds.height - point.y
+        let titlebarHeight = max(contentView.safeAreaInsets.top, window.frame.height - window.contentLayoutRect.height)
+        if yFromTop <= titlebarHeight {
+            // 顶部左端的窗口交通灯按钮交给系统处理，避免抢占。
+            return point.x > 88
+        }
+        if let rightEdge = sidebarRightEdge(in: contentView), point.x <= rightEdge { return true }
+        return false
+    }
+
+    /// 通过 NavigationSplitView 底层的 NSSplitView 取左侧导航列的右边界。
+    @MainActor
+    private static func sidebarRightEdge(in contentView: NSView) -> CGFloat? {
+        guard let splitView = firstSplitView(in: contentView) else { return nil }
+        let columns = splitView.subviews.filter { $0.frame.width > 50 && $0.frame.height > 50 }
+        guard let sidebar = columns.min(by: { $0.frame.width < $1.frame.width }),
+              sidebar.frame.width < splitView.bounds.width * 0.5
+        else { return nil }
+        return sidebar.convert(sidebar.bounds, to: contentView).maxX
+    }
+
+    @MainActor
+    private static func firstSplitView(in view: NSView) -> NSSplitView? {
+        if let splitView = view as? NSSplitView { return splitView }
+        for subview in view.subviews {
+            if let found = firstSplitView(in: subview) { return found }
+        }
+        return nil
+    }
+
+    @MainActor
+    private static func containsInteractiveControl(at point: NSPoint, in root: NSView, reference: NSView) -> Bool {
+        for subview in root.subviews {
+            guard subview.frame.width > 0, subview.frame.height > 0, !subview.isHidden else { continue }
+            let rect = subview.convert(subview.bounds, to: reference)
+            if rect.contains(point), isInteractive(subview) { return true }
+            if containsInteractiveControl(at: point, in: subview, reference: reference) { return true }
+        }
+        return false
+    }
+
+    @MainActor
+    private static func isInteractive(_ view: NSView) -> Bool {
+        var current: NSView? = view
+        while let candidate = current {
+            let name = String(describing: type(of: candidate))
+            if interactiveViewNameHints.contains(where: { name.contains($0) }) { return true }
+            // 列表容器本身覆盖整列，不能整体视为控件；其中的行/单元由上面的名称命中判定。
+            let isListContainer = candidate is NSTableView || candidate is NSCollectionView
+            if !isListContainer, candidate is NSControl || candidate is NSText { return true }
+            current = candidate.superview
+        }
+        return false
+    }
+}
+
 @MainActor
 final class DevEnvAppDelegate: NSObject, NSApplicationDelegate {
     let projectsModel: ProjectsViewModel
@@ -19,6 +115,7 @@ final class DevEnvAppDelegate: NSObject, NSApplicationDelegate {
     private(set) var statusMenu = NSMenu()
     private var cancellables: Set<AnyCancellable> = []
     private var windowObservers: [NSObjectProtocol] = []
+    private var fillDoubleClickMonitor: Any?
     private var mainWindowOpener: (() -> Void)?
     private var isMainWindowReady = false
     private var pendingMainWindowRequest: MainWindowRequest?
@@ -51,6 +148,7 @@ final class DevEnvAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         installStatusItem()
+        installFillDoubleClickMonitor()
         observeWindowLifecycle()
         rebuildStatusMenu()
         DispatchQueue.main.async { [weak self] in
@@ -86,6 +184,24 @@ final class DevEnvAppDelegate: NSObject, NSApplicationDelegate {
         item.button?.toolTip = "DevEnv"
         item.menu = statusMenu
         statusItem = item
+    }
+
+    private func installFillDoubleClickMonitor() {
+        guard fillDoubleClickMonitor == nil else { return }
+        fillDoubleClickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown]) { [weak self] event in
+            MainActor.assumeIsolated {
+                self?.handleFillDoubleClick(event)
+            }
+            return event
+        }
+    }
+
+    private func handleFillDoubleClick(_ event: NSEvent) {
+        guard event.clickCount == 2,
+              let window = event.window,
+              WindowFillToggle.shouldToggle(at: event.locationInWindow, in: window)
+        else { return }
+        WindowFillToggle.toggle(window)
     }
 
     private func observeStatusMenuInputs() {
