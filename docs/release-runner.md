@@ -39,7 +39,7 @@
 
    ```bash
    ./config.sh \
-     --url https://github.com/zh826256645/DevEnv \
+     --url https://github.com/my-hosted/DevEnv \
      --token '<短期注册 Token>' \
      --name devenv-release-arm64 \
      --labels release \
