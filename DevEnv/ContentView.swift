@@ -762,6 +762,10 @@ struct ContentView: View {
     @State private var runConfigurationSourceIdentity: String?
     @State private var runConfigurationSourceProjectID: String?
     @State private var selectedRunConfigurationID: String?
+    @State private var isRunDetailVisible = true
+    @State private var runDetailWidth: CGFloat?
+    @State private var runResizeStartWidth: CGFloat?
+    @State private var isRunSplitterHovering = false
     @State private var expandedTerminalConfiguration: ProjectRunConfiguration?
     @State private var runSearchText = ""
     @State private var runStatusFilter = RunListStatusFilter.all
@@ -845,6 +849,7 @@ struct ContentView: View {
                     runProjectFilterID = nil
                     runSearchText = ""
                     selectedRunConfigurationID = configurationID
+                    isRunDetailVisible = true
                     runDetailTab = notification.userInfo?["detailTab"] as? String ?? "终端"
                     selectPage(.runs)
                 }
@@ -1664,12 +1669,22 @@ struct ContentView: View {
             }
         } else {
             GeometryReader { geometry in
-                HStack(alignment: .top, spacing: 14) {
+                let totalWidth = geometry.size.width
+                let detailWidth = isRunDetailVisible ? resolvedRunDetailWidth(totalWidth: totalWidth) : 0
+                let handleWidth = isRunDetailVisible ? runSplitHandleWidth : 0
+                let listWidth = max(0, totalWidth - detailWidth - handleWidth)
+                HStack(alignment: .top, spacing: 0) {
                     runConfigurationTable
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    runConfigurationDetail
-                        .frame(width: min(max(geometry.size.width * 0.45, 420), 680))
+                        .frame(width: listWidth)
                         .frame(maxHeight: .infinity)
+                    if isRunDetailVisible {
+                        runSplitHandle(totalWidth: totalWidth)
+                            .frame(width: runSplitHandleWidth)
+                            .frame(maxHeight: .infinity)
+                        runConfigurationDetail
+                            .frame(width: detailWidth)
+                            .frame(maxHeight: .infinity)
+                    }
                 }
             }
         }
@@ -1677,6 +1692,58 @@ struct ContentView: View {
 
     private var runEmptyDescription: String {
         runProjectFilterID == nil ? "在工作区保存名称、命令和工作目录；项目关联可选。" : "当前项目尚未保存运行配置。"
+    }
+
+    private let runSplitHandleWidth: CGFloat = 14
+    private let runSplitMinimumDetailWidth: CGFloat = 380
+    private let runSplitMinimumListWidth: CGFloat = 360
+
+    private func resolvedRunDetailWidth(totalWidth: CGFloat) -> CGFloat {
+        let defaultWidth = min(max(totalWidth * 0.45, 420), 680)
+        return clampedRunDetailWidth(runDetailWidth ?? defaultWidth, totalWidth: totalWidth)
+    }
+
+    private func clampedRunDetailWidth(_ proposed: CGFloat, totalWidth: CGFloat) -> CGFloat {
+        let maxWidth = max(runSplitMinimumDetailWidth, totalWidth - runSplitMinimumListWidth - runSplitHandleWidth)
+        return min(max(proposed, runSplitMinimumDetailWidth), maxWidth)
+    }
+
+    private func runSplitHandle(totalWidth: CGFloat) -> some View {
+        let isActive = isRunSplitterHovering || runResizeStartWidth != nil
+        return ZStack {
+            Color.clear
+            Capsule()
+                .fill(isActive ? AppTheme.accent.opacity(0.55) : Color.primary.opacity(0.12))
+                .frame(width: isActive ? 3 : 1)
+                .frame(maxHeight: .infinity)
+                .padding(.vertical, 2)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            guard hovering != isRunSplitterHovering else { return }
+            isRunSplitterHovering = hovering
+            if hovering {
+                NSCursor.resizeLeftRight.push()
+            } else {
+                NSCursor.pop()
+            }
+        }
+        .gesture(
+            DragGesture(minimumDistance: 0, coordinateSpace: .global)
+                .onChanged { value in
+                    if runResizeStartWidth == nil {
+                        runResizeStartWidth = resolvedRunDetailWidth(totalWidth: totalWidth)
+                    }
+                    let startWidth = runResizeStartWidth ?? resolvedRunDetailWidth(totalWidth: totalWidth)
+                    runDetailWidth = clampedRunDetailWidth(startWidth - value.translation.width, totalWidth: totalWidth)
+                }
+                .onEnded { _ in
+                    runResizeStartWidth = nil
+                }
+        )
+        .accessibilityLabel("调整运行配置列表与详情的宽度")
+        .accessibilityHint("左右拖动以调整两侧宽度")
     }
 
     private var selectedRunSuggestions: [ProjectRunSuggestion] {
@@ -1906,9 +1973,12 @@ struct ContentView: View {
     private func runConfigurationRow(_ configuration: ProjectRunConfiguration, detailColumnCount: Int) -> some View {
         let project = configuration.associatedProject(in: projectsModel.records)
         let state = runCoordinator.session(for: configuration.id)?.state ?? .inactive
-        let isSelected = selectedRunConfiguration?.id == configuration.id
+        let isSelected = isRunDetailVisible && selectedRunConfiguration?.id == configuration.id
         return HStack(spacing: 10) {
-            Button { selectedRunConfigurationID = configuration.id } label: {
+            Button {
+                selectedRunConfigurationID = configuration.id
+                isRunDetailVisible = true
+            } label: {
                 HStack(spacing: 10) {
                     HStack(spacing: 9) {
                         runConfigurationLogo(configuration, size: 28)
@@ -2174,6 +2244,16 @@ struct ContentView: View {
                 }
                 Spacer(minLength: 0)
                 projectRunStatusBadge(state, isEnabled: configuration.isEnabled)
+                Button {
+                    isRunDetailVisible = false
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12, weight: .semibold))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help("关闭详情面板（不会关闭终端）")
+                .accessibilityLabel("关闭运行配置详情面板")
             }
             HStack(alignment: .top, spacing: 16) {
                 VStack(alignment: .leading, spacing: 8) {
@@ -2268,6 +2348,7 @@ struct ContentView: View {
         let state = runCoordinator.session(for: configuration.id)?.state ?? .inactive
         Button("打开终端") {
             selectedRunConfigurationID = configuration.id
+            isRunDetailVisible = true
             runDetailTab = "终端"
             runCoordinator.openTerminal(configuration)
         }
@@ -2508,6 +2589,7 @@ struct ContentView: View {
         switch runCoordinator.run(configuration, project: project) {
         case .started:
             selectedRunConfigurationID = configuration.id
+            isRunDetailVisible = true
         case .rejected:
             break
         }
@@ -3394,6 +3476,7 @@ struct ContentView: View {
             ForEach(configurations) { configuration in
                 Button {
                     selectedRunConfigurationID = configuration.id
+                    isRunDetailVisible = true
                     openRuns(for: project)
                 } label: {
                     HStack(spacing: 12) {
@@ -4410,6 +4493,7 @@ struct ContentView: View {
     private func openOverviewRun(_ run: OverviewRun) {
         selectWorkspaceForRun(run.configuration.id)
         selectedRunConfigurationID = run.configuration.id
+        isRunDetailVisible = true
         selectPage(.runs)
     }
 
@@ -4748,6 +4832,7 @@ struct ContentView: View {
         case let .run(configurationID):
             selectWorkspaceForRun(configurationID)
             selectedRunConfigurationID = configurationID
+            isRunDetailVisible = true
             selectPage(.runs)
         case let .project(projectID, capability):
             if let project = projectsModel.records.first(where: { $0.id == projectID }) {
