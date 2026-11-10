@@ -1,6 +1,6 @@
 # DevEnv 发版流程
 
-状态：发版自动化已实现；最新已发布版本为 `v0.2.4` Private Preview（Build `10`）。
+状态：发版自动化已实现；最新已发布版本为 `v0.2.5` Private Preview（Build `11`），2026-11-10。
 
 ## 本地发布通道（自 v0.1.1 起）
 
@@ -29,6 +29,12 @@ v0.2.3 已于 2026-10-06 发布为 Prerelease。annotated Tag 指向 master 合�
 正式产物必须从 `develop → master` 的精确合并提交重新验证和构建。依赖锁与 schema 8 不变，保留源码 SHA、工具链、日志、dSYM、安装包与校验文件至少 90 天。验证后创建不可移动 annotated Tag，上传 Draft Prerelease，下载附件复验后按本次发版授权发布。
 
 v0.2.4 已于 2026-10-19 发布为 Prerelease。annotated Tag 指向 master 合并提交 `84320283942a922f84507c314dd916137820d638`（[PR #106](https://github.com/my-hosted/DevEnv/pull/106)）；候选和精确合并提交分别通过四组发布契约、287 项 XCTest 与 arm64 Release 构建。正式 DMG 与 Draft 附件回下载复验全部通过。DMG SHA-256 为 `599c2456aad9a60ec3997a80eb64a05b9e85fc44916ec780b81432d8c408e8dd`。[Release](https://github.com/my-hosted/DevEnv/releases/tag/v0.2.4) 提供安装包及校验文件；本地保留产物、dSYM 与完整验收证据至少 90 天。
+
+### v0.2.5（Build 11）本地构建与发布记录
+
+2026-11-10，仓库所有者授权在本机（Xcode `27.1`、arm64）完成 `v0.2.5` 的本地验证并发布，以本地完整验证替代 Hosted CI。本版本累计 `v0.2.4` 以来的变更：应用内检查更新与下载并限制检查频率（#114）、项目级环境变量注入（#113）、运行配置平铺视图与拖拽排序（#111）、工作区运行配置拖拽分栏（#110）等。
+
+源码为 `master` 合并提交 `3385db4`，annotated Tag `v0.2.5` 指向该提交。四组发布契约测试通过；`UpdateCheckerTests`（15 项）、`ProjectRunSessionsTests`（93 项）等通过。已知环境问题：`EnvironmentScannerTests.testMachineToolSearchPathSupportsRealCshLoginInitialization` 在本机 `/bin/csh`(tcsh) 下因 `setenv: Too many arguments` 失败；该测试自 `v0.2.4` 起未改动，属本机 tcsh 行为差异，与本次变更无关，未记作已通过。Release 构建、ad-hoc 严格签名、arm64 架构、dSYM UUID（`9E143D9A-6515-38EA-BC9A-19281A859050`）与 DMG 挂载/内容校验通过；DMG SHA-256 为 `c28afc606d059f48858c462e6f2cdb61c7eff5061e7172c20eef8e414bd4ac6d`。上传 Draft Prerelease 后回下载复验一致，再发布为 Prerelease。[Release](https://github.com/my-hosted/DevEnv/releases/tag/v0.2.5)。
 
 1. 在 `develop` 更新版本、Build、工作流锁定值和 Release Notes，提交并推送。
 2. 运行四组 `scripts/tests/*-contract-tests.sh` 发布契约测试及完整 XCTest，记录候选 SHA。只有已明确授权使用本地验证替代 Hosted CI，且本地验证通过时，才允许合并 `develop → master` Release PR；在 PR 记录替代原因和证据，不修改失败 CI 的结果。
