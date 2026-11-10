@@ -85,8 +85,21 @@ struct ProjectRecord: Codable, Identifiable, Equatable, Sendable {
     var boundary: ProjectRootBoundary
     var availability: ProjectAvailability
 
+    /// Project-wide shell snippet (for example `source .env`) that runs before
+    /// every run configuration command owned by this project. `nil` or blank
+    /// means no injection.
+    var environmentInjectionCommand: String?
+
+    /// Trimmed, non-empty injection command, or `nil` when nothing should run.
+    var normalizedEnvironmentInjectionCommand: String? {
+        guard let value = environmentInjectionCommand?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !value.isEmpty else { return nil }
+        return value
+    }
+
     private enum CodingKeys: String, CodingKey {
         case id, title, path, firstDiscoveredAt, lastDiscoveredAt, isNew, boundary, workspaceID
+        case environmentInjectionCommand
     }
 
     init(
@@ -95,7 +108,8 @@ struct ProjectRecord: Codable, Identifiable, Equatable, Sendable {
         discoveredAt: Date,
         isNew: Bool = true,
         boundary: ProjectRootBoundary = .manifest,
-        workspaceID: String = Workspace.defaultWorkspace.id
+        workspaceID: String = Workspace.defaultWorkspace.id,
+        environmentInjectionCommand: String? = nil
     ) {
         self.id = id
         self.workspaceID = workspaceID
@@ -106,6 +120,8 @@ struct ProjectRecord: Codable, Identifiable, Equatable, Sendable {
         self.isNew = isNew
         self.boundary = boundary
         availability = .unknown
+        let normalized = environmentInjectionCommand?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.environmentInjectionCommand = normalized?.isEmpty == false ? normalized : nil
     }
 
     init(from decoder: Decoder) throws {
@@ -125,6 +141,9 @@ struct ProjectRecord: Codable, Identifiable, Equatable, Sendable {
         isNew = try values.decode(Bool.self, forKey: .isNew)
         boundary = try values.decodeIfPresent(ProjectRootBoundary.self, forKey: .boundary) ?? .manifest
         availability = .unknown
+        let injection = try values.decodeIfPresent(String.self, forKey: .environmentInjectionCommand)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        environmentInjectionCommand = injection?.isEmpty == false ? injection : nil
     }
 
     func encode(to encoder: Encoder) throws {
@@ -137,6 +156,7 @@ struct ProjectRecord: Codable, Identifiable, Equatable, Sendable {
         try values.encode(lastDiscoveredAt, forKey: .lastDiscoveredAt)
         try values.encode(isNew, forKey: .isNew)
         try values.encode(boundary, forKey: .boundary)
+        try values.encodeIfPresent(environmentInjectionCommand, forKey: .environmentInjectionCommand)
     }
 }
 
@@ -688,7 +708,7 @@ struct ProjectRunSuggestionScanner: Sendable {
 }
 
 struct ProjectRecordDocument: Codable, Equatable, Sendable {
-    static let currentSchemaVersion = 8
+    static let currentSchemaVersion = 9
 
     let schemaVersion: Int
     var records: [ProjectRecord]
@@ -1587,6 +1607,28 @@ final class ProjectsViewModel: ObservableObject {
         }
         guard applyDocumentChange({ $0.records[index].title = title }) else { return false }
         resultMessage = "已重命名项目为“\(title)”"
+        return true
+    }
+
+    /// Set or clear the project-wide environment injection command.
+    ///
+    /// Blank input clears the setting. The command is stored trimmed; a `NUL`
+    /// byte is rejected because it cannot be written to a shell script.
+    @discardableResult
+    func updateProjectEnvironmentInjection(_ projectID: String, command: String?) -> Bool {
+        guard !mutationsArePaused,
+              let index = document.records.firstIndex(where: { $0.id == projectID }) else { return false }
+        let normalized = command?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let value = normalized?.isEmpty == false ? normalized : nil
+        if let value, value.contains("\0") {
+            operationError = "环境变量注入命令包含无效字符"
+            return false
+        }
+        let title = document.records[index].title
+        guard applyDocumentChange({ $0.records[index].environmentInjectionCommand = value }) else { return false }
+        resultMessage = value == nil
+            ? "已清除项目“\(title)”的环境变量注入"
+            : "已更新项目“\(title)”的环境变量注入"
         return true
     }
 

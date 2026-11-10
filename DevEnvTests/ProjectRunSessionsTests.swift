@@ -180,6 +180,39 @@ final class ProjectRunSessionsTests: XCTestCase {
         }
     }
 
+    func testCommandScriptPrependsProjectEnvironmentInjection() {
+        XCTAssertEqual(ProjectRunCommandScript.compose(command: "npm run dev", environmentInjection: nil), "npm run dev")
+        XCTAssertEqual(ProjectRunCommandScript.compose(command: "npm run dev", environmentInjection: "   "), "npm run dev")
+        XCTAssertEqual(
+            ProjectRunCommandScript.compose(command: "npm run dev", environmentInjection: "  source .env\n"),
+            "source .env\nnpm run dev"
+        )
+    }
+
+    func testProjectEnvironmentInjectionRunsBeforeConfigurationCommand() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let configuration = ProjectRunConfiguration(
+            id: "injected",
+            projectID: directory.path,
+            name: "服务",
+            command: "npm run dev",
+            workingDirectory: "."
+        )
+        let fixture = try ProjectRunTestFixture(
+            directory: directory,
+            configurations: [configuration],
+            projectRoots: [directory],
+            projectEnvironmentInjections: [directory: "source .env"]
+        )
+        XCTAssertEqual(fixture.coordinator.run(configuration), .started)
+        let engine = try XCTUnwrap(fixture.factory.engines.first)
+        XCTAssertEqual(engine.commands.count, 1)
+        XCTAssertEqual(engine.commands.first?.command, "source .env\nnpm run dev")
+        XCTAssertEqual(engine.commands.first?.workingDirectory, directory.path)
+    }
+
     func testKeyboardInterruptCancelsRestartAndIsNotReportedAsCommandFailure() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -3768,11 +3801,16 @@ private struct ProjectRunTestFixture {
         directory: URL,
         configurations: [ProjectRunConfiguration],
         projectRoots: [URL],
+        projectEnvironmentInjections: [URL: String] = [:],
         shellProvider: FakeProjectRunShellProvider = FakeProjectRunShellProvider(path: "/bin/zsh")
     ) throws {
         store = ProjectRecordStore(fileURL: directory.appendingPathComponent("records.json"))
         var document = ProjectRecordDocument(runConfigurations: configurations)
-        document.records = projectRoots.map { ProjectRecord(id: $0.path, path: $0.path, discoveredAt: Date()) }
+        document.records = projectRoots.map { root in
+            var record = ProjectRecord(id: root.path, path: root.path, discoveredAt: Date())
+            record.environmentInjectionCommand = projectEnvironmentInjections[root]
+            return record
+        }
         try store.save(document)
         projectsModel = ProjectsViewModel(store: store)
         factory = FakeProjectRunEngineFactory()

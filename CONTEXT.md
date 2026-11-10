@@ -42,6 +42,10 @@ DevEnv 保存、属于一个 Workspace 且可选关联该工作区内一个 Proj
 项目删除或项目与配置分开移动会使关联持续失效；后来进入同一 Workspace 也不自动恢复，需显式解除或重新关联。失效不终止当前执行，但阻止之后提交的新启动和重启；移动造成的失效也不取消移动前已提交的重启。
 _Avoid_: Project Requirement, Project Requirements Summary, Runnable Status
 
+**Project Environment Injection**:
+一个 Project Record 可选保存的 Shell 片段，在该项目关联的每个 Run Configuration 执行配置命令前，于该次执行解析出的工作目录内先运行，用于注入环境变量（例如 `source .env`）。它不改变配置命令本身，随启动冻结进对应的 Run Execution，且不适用于未关联该项目的运行配置。
+_Avoid_: Global Environment, Project ENV File, Startup Script
+
 **Associated Web Address**:
 Run Configuration 可选保存的、供用户查看或打开的网页地址；它不参与运行命令，也不要求保存时通过网页格式校验。
 _Avoid_: Run Endpoint, Service URL, Health URL
