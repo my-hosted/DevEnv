@@ -1416,4 +1416,59 @@ final class ProjectRecordsTests: XCTestCase {
         XCTAssertEqual(RunTileOrder.arrange(remaining, storedOrder: storedOrder).map(\.id), ["c", "b"])
         XCTAssertEqual(RunTileOrder.pruning(storedOrder, to: ["b", "c"]), ["c", "b"])
     }
+
+    @MainActor
+    func testProjectEnvironmentInjectionPersistsTrimsAndClears() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let projectPath = directory.appendingPathComponent("project")
+        try FileManager.default.createDirectory(at: projectPath, withIntermediateDirectories: true)
+        let store = ProjectRecordStore(fileURL: directory.appendingPathComponent("records.json"))
+        var document = ProjectRecordDocument()
+        document.addDirect([projectPath.path])
+        try store.save(document)
+        let model = ProjectsViewModel(store: store)
+        let project = try XCTUnwrap(model.records.first { $0.path == projectPath.path })
+
+        XCTAssertTrue(model.updateProjectEnvironmentInjection(project.id, command: "  source .env\n"))
+        let saved = try XCTUnwrap(store.load().records.first)
+        XCTAssertEqual(saved.environmentInjectionCommand, "source .env")
+        XCTAssertEqual(saved.normalizedEnvironmentInjectionCommand, "source .env")
+
+        XCTAssertTrue(model.updateProjectEnvironmentInjection(project.id, command: "   \n"))
+        XCTAssertNil(try XCTUnwrap(store.load().records.first).environmentInjectionCommand)
+
+        XCTAssertFalse(model.updateProjectEnvironmentInjection(project.id, command: "echo hi\u{0}"))
+        XCTAssertNil(try XCTUnwrap(store.load().records.first).environmentInjectionCommand)
+    }
+
+    func testVersionEightDocumentWithoutEnvironmentInjectionDecodesAsUnset() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let fileURL = directory.appendingPathComponent("records.json")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data(#"""
+        {
+          "schemaVersion": 8,
+          "records": [{
+            "id": "project",
+            "workspaceID": "default",
+            "title": "App",
+            "path": "/Projects/app",
+            "firstDiscoveredAt": "1970-01-01T00:01:40Z",
+            "lastDiscoveredAt": "1970-01-01T00:01:40Z",
+            "isNew": false,
+            "boundary": "manifest"
+          }],
+          "ignoredProjects": [],
+          "runConfigurations": [],
+          "workspaces": [{"id": "default", "name": "默认工作区"}],
+          "selectedWorkspaceID": "default"
+        }
+        """#.utf8).write(to: fileURL)
+
+        let document = try ProjectRecordStore(fileURL: fileURL).load()
+        XCTAssertEqual(document.schemaVersion, ProjectRecordDocument.currentSchemaVersion)
+        XCTAssertNil(document.records.first?.environmentInjectionCommand)
+    }
 }

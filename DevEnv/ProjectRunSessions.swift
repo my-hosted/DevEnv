@@ -114,19 +114,35 @@ struct ProjectRunFrozenStartRequest: Equatable, Sendable {
     let command: String
     let workingDirectory: String
     let commandWasDraft: Bool
+    let environmentInjection: String?
 
     init(
         configuration: ProjectRunConfiguration,
         projectRoot: String?,
         command: String,
         workingDirectory: String,
-        commandWasDraft: Bool = false
+        commandWasDraft: Bool = false,
+        environmentInjection: String? = nil
     ) {
         self.configuration = configuration
         self.projectRoot = projectRoot
         self.command = command
         self.workingDirectory = workingDirectory
         self.commandWasDraft = commandWasDraft
+        self.environmentInjection = environmentInjection
+    }
+}
+
+/// Compose the shell snippet that DevEnv hands to the interactive shell for a
+/// Run Execution: the project's environment injection command comes first, then
+/// the configuration command. The injection runs after the shell has changed
+/// into the execution working directory, so relative paths like `source .env`
+/// resolve from there.
+enum ProjectRunCommandScript {
+    static func compose(command: String, environmentInjection: String?) -> String {
+        guard let injection = environmentInjection?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !injection.isEmpty else { return command }
+        return "\(injection)\n\(command)"
     }
 }
 
@@ -1350,7 +1366,8 @@ final class ProjectRunCoordinator: ObservableObject {
                     projectRoot: project?.path,
                     command: configuration.command,
                     workingDirectory: directory.path,
-                    commandWasDraft: hasCommandDraft(configurationID: configuration.id)
+                    commandWasDraft: hasCommandDraft(configurationID: configuration.id),
+                    environmentInjection: project?.normalizedEnvironmentInjectionCommand
                 )
             } catch {
                 _ = rejectStartAttempt(
@@ -1416,7 +1433,8 @@ final class ProjectRunCoordinator: ObservableObject {
                 projectRoot: projectRoot,
                 command: configuration.command,
                 workingDirectory: directory.path,
-                commandWasDraft: hasCommandDraft(configurationID: configuration.id)
+                commandWasDraft: hasCommandDraft(configurationID: configuration.id),
+                environmentInjection: projectEnvironmentInjection(for: configuration)
             )
             return launch(request)
         } catch {
@@ -1490,7 +1508,8 @@ final class ProjectRunCoordinator: ObservableObject {
                 projectRoot: projectRoot,
                 command: configuration.command,
                 workingDirectory: directory.path,
-                commandWasDraft: hasCommandDraft(configurationID: configuration.id)
+                commandWasDraft: hasCommandDraft(configurationID: configuration.id),
+                environmentInjection: projectEnvironmentInjection(for: configuration)
             )
             session.failureExecution = nil
             session.failureMessage = nil
@@ -1734,6 +1753,12 @@ final class ProjectRunCoordinator: ObservableObject {
         }
     }
 
+    /// Current environment injection command for the project that owns a
+    /// configuration, read from the live project records at freeze time.
+    private func projectEnvironmentInjection(for configuration: ProjectRunConfiguration) -> String? {
+        configuration.associatedProject(in: projectsModel.records)?.normalizedEnvironmentInjectionCommand
+    }
+
     private func validateProjectContext(
         _ configuration: ProjectRunConfiguration, projectRoot: String?, preservesProjectContextAfterMove: Bool = false
     ) throws {
@@ -1811,7 +1836,11 @@ final class ProjectRunCoordinator: ObservableObject {
             session.failureMessage = nil
             session.failureAt = nil
             session.lastExitCode = nil
-            try session.engine.execute(command: request.command, workingDirectory: request.workingDirectory)
+            let script = ProjectRunCommandScript.compose(
+                command: request.command,
+                environmentInjection: request.environmentInjection
+            )
+            try session.engine.execute(command: script, workingDirectory: request.workingDirectory)
             session.lastSuccessfulCommand = request.command
             session.startedAt = Date()
             session.state = .running

@@ -744,6 +744,8 @@ struct ContentView: View {
     @State private var editingRunConfiguration: ProjectRunConfiguration?
     @State private var renamingProject: ProjectRecord?
     @State private var projectNameDraft = ""
+    @State private var environmentInjectionProject: ProjectRecord?
+    @State private var environmentInjectionDraft = ""
     @State private var isShowingWorkspaceEditor = false
     @State private var renamingWorkspaceID: String?
     @State private var workspaceNameDraft = ""
@@ -927,6 +929,9 @@ struct ContentView: View {
             }
             .padding(24)
             .frame(width: 420)
+        }
+        .sheet(item: $environmentInjectionProject) { project in
+            environmentInjectionEditor(project: project)
         }
         .alert(
             homebrewServiceConfirmationTitle,
@@ -3070,6 +3075,13 @@ struct ContentView: View {
                         .pickerStyle(.menu)
                         .labelsHidden()
                         .accessibilityLabel("运行配置关联项目（可选）")
+                        if let projectID = runConfigurationProjectID,
+                           let injection = projectsModel.records.first(where: { $0.id == projectID })?.normalizedEnvironmentInjectionCommand {
+                            Text("启动前将先执行项目环境注入：\(injection)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                        }
                         if let path = editingRunConfiguration?.deletedProjectPath {
                             Text("原项目目录：\(path)")
                                 .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
@@ -3694,6 +3706,11 @@ struct ContentView: View {
                 renamingProject = project
             }
             .disabled(projectsModel.mutationsArePaused)
+            Button("环境变量注入…") {
+                environmentInjectionDraft = project.normalizedEnvironmentInjectionCommand ?? ""
+                environmentInjectionProject = project
+            }
+            .disabled(projectsModel.mutationsArePaused)
             workspaceMoveButton(.project(project.id))
             Divider()
             Button("移除项目记录", role: .destructive) { pendingProjectRemovalIDs = [project.id] }
@@ -3704,6 +3721,97 @@ struct ContentView: View {
         .accessibilityLabel("项目操作：\(project.title)")
     }
 
+    private func environmentInjectionEditor(project: ProjectRecord) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 12) {
+                Image(systemName: "terminal")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 34, height: 34)
+                    .background(AppTheme.accent.gradient, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("环境变量注入").font(.headline.weight(.semibold))
+                    Text(project.title).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
+                Spacer()
+            }
+            Text("为该项目下的所有运行配置设置一段前置命令。每次启动配置命令前，会先在对应工作目录执行它。")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            TextEditor(text: $environmentInjectionDraft)
+                .font(.body.monospaced())
+                .scrollContentBackground(.hidden)
+                .frame(height: 120)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 5)
+                .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(Color.primary.opacity(0.11))
+                }
+                .accessibilityLabel("环境变量注入命令")
+            Text("例如：source .env，或 export API_BASE=http://localhost:3000。相对路径基于运行配置的工作目录；留空表示不注入。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if let error = projectsModel.operationError {
+                Text(error).foregroundStyle(.red)
+            }
+            HStack {
+                Spacer()
+                Button("取消", role: .cancel) { environmentInjectionProject = nil }
+                    .keyboardShortcut(.cancelAction)
+                Button("保存") {
+                    if projectsModel.updateProjectEnvironmentInjection(project.id, command: environmentInjectionDraft) {
+                        environmentInjectionProject = nil
+                    }
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(projectsModel.mutationsArePaused)
+            }
+        }
+        .padding(24)
+        .frame(width: 520)
+    }
+
+    @ViewBuilder
+    private func projectEnvironmentInjectionRow(_ project: ProjectRecord) -> some View {
+        let command = project.normalizedEnvironmentInjectionCommand
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "terminal")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(AppTheme.accent)
+                .frame(width: 22, height: 22)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("环境变量注入").font(.subheadline.weight(.semibold))
+                if let command {
+                    Text(command)
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .textSelection(.enabled)
+                    Text("每次启动此项目的运行配置前先执行")
+                        .font(.caption2).foregroundStyle(.secondary)
+                } else {
+                    Text("未设置。可为该项目下所有运行配置统一注入环境变量。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            Spacer(minLength: 0)
+            Button(command == nil ? "设置…" : "编辑…") {
+                environmentInjectionDraft = command ?? ""
+                environmentInjectionProject = project
+            }
+            .buttonStyle(.bordered)
+            .fixedSize()
+            .disabled(projectsModel.mutationsArePaused)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+    }
+
     @ViewBuilder
     private var projectDetail: some View {
         if let project = selectedProject {
@@ -3711,6 +3819,7 @@ struct ContentView: View {
                 VStack(spacing: 18) {
                     projectDetailHeader(project)
                     projectSummaryCards(project, analysis: projectsModel.analyses[project.id])
+                    projectEnvironmentInjectionRow(project)
                 }
                 .padding(20)
                 Divider().opacity(0.6)
