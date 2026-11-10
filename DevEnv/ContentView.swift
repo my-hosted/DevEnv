@@ -721,6 +721,7 @@ struct ContentView: View {
     @State private var isShowingNotifications = false
     @State private var readNoticeIdentities: Set<String> = []
     @State private var settingsDraft = AutoRefreshSettings()
+    @AppStorage(UpdateConfiguration.automaticCheckDefaultsKey) private var autoCheckForUpdates = true
     @State private var pendingPage: Page?
     @State private var isShowingSettingsExitConfirmation = false
     @State private var usesForegroundRefreshInterval = NSApplication.shared.isActive
@@ -4553,6 +4554,60 @@ struct ContentView: View {
                 .padding(10)
             }
 
+            HStack(spacing: 12) {
+                Image(systemName: "arrow.down.circle")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 36, height: 36)
+                    .background(Color.accentColor.opacity(0.10), in: RoundedRectangle(cornerRadius: 9))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("更新")
+                        .font(.headline)
+                    Text("从 GitHub Releases 检查并下载新版本")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            GroupBox {
+                VStack(spacing: 0) {
+                    HStack(spacing: 16) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("自动检查更新")
+                                .fontWeight(.medium)
+                            Text("启动时检查一次，发现新版本时提示")
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Toggle("自动检查更新", isOn: $autoCheckForUpdates)
+                            .labelsHidden()
+                            .toggleStyle(.switch)
+                    }
+                    .padding(.vertical, 6)
+
+                    Divider()
+                        .padding(.vertical, 14)
+
+                    HStack(spacing: 16) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("当前版本")
+                                .fontWeight(.medium)
+                            Text(appVersionDisplay)
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button("立即检查更新…") {
+                            NotificationCenter.default.post(name: .devEnvCheckForUpdates, object: nil)
+                        }
+                    }
+                    .padding(.vertical, 6)
+                }
+                .padding(10)
+            }
+
             if settingsDraft != model.autoRefreshSettings {
                 HStack {
                     Text("有未保存的修改")
@@ -4567,6 +4622,14 @@ struct ContentView: View {
             }
         }
         .frame(maxWidth: 640)
+    }
+
+    private var appVersionDisplay: String {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0"
+        if let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String, !build.isEmpty {
+            return "\(version)（Build \(build)）"
+        }
+        return version
     }
 
     private var foregroundSeconds: Binding<Int> {
