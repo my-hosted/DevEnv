@@ -54,6 +54,14 @@ _Avoid_: Run Endpoint, Service URL, Health URL
 Run Configuration 在一次 Run Execution 成功提交后，按用户设置的延时尝试使用默认浏览器打开 Associated Web Address 的行为；每次执行最多触发一次，停止、重启、关闭终端或执行提前结束会取消尚未触发的打开。
 _Avoid_: Auto Run, Browser Launch, Health Check
 
+**In-App Update Check**:
+DevEnv 通过公开的 GitHub Releases 列表判断是否存在比当前 `CFBundleShortVersionString` 更新的可下载版本的一次只读网络查询；它不下载、不安装、不启动项目命令，也不改变 Machine Snapshot 或项目记录。
+_Avoid_: Auto Update, App Upgrade
+
+**Update Download**:
+在应用内把一次 In-App Update Check 发现的 Release 的 DMG 下载到本机「下载」目录并按发布摘要校验 SHA-256 的行为；校验通过只说明文件与发布摘要一致，不代表代码签名或公证信任，也不自动替换已安装的 App。
+_Avoid_: Auto Install, Silent Update
+
 **Run Batch Intent**:
 用户明确触发批量启动、停止或关闭时，从触发入口的当前作用域解析并冻结、仅用于本次提交的一组单项启动请求或会话活动；停止目标可为配置命令、手动命令或就绪会话，全部目标均就绪时入口切换为关闭终端。之后开始的新命令不被旧停止或关闭请求追溯处理。运行页作用域为当前 Workspace 内的项目、状态筛选与搜索结果，状态栏作用域为全部 Workspace；它不是持久化运行组或运行编排，各目标按单项语义独立处理。
 _Avoid_: Saved Run Group, Live Filter Query, All Configurations, Atomic Run, Run Orchestration, Batch Run History

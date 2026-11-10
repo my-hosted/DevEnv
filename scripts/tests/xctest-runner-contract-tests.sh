@@ -90,8 +90,8 @@ trap 'rm -rf "$TEST_ROOT"' EXIT
 make_fixture "$TEST_ROOT"
 
 pass_output="$(run_fixture "$TEST_ROOT" pass)" || fail 'successful XCTest output should pass'
-[[ "$pass_output" == *'Verified XCTest execution: 12 tests, 0 failures.'* ]] \
-    || fail 'successful run should execute all six XCTest classes in isolated processes'
+[[ "$pass_output" == *'Verified XCTest execution: 14 tests, 0 failures.'* ]] \
+    || fail 'successful run should execute all seven XCTest classes in isolated processes'
 
 set +e
 zero_output="$(run_fixture "$TEST_ROOT" zero)"

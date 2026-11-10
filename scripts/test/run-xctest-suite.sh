@@ -121,6 +121,7 @@ TEST_CLASSES=(
     ProjectRecordsTests
     ProjectRequirementsTests
     ProjectRunSessionsTests
+    UpdateCheckerTests
 )
 
 for test_class in "${TEST_CLASSES[@]}"; do

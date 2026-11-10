@@ -4,6 +4,7 @@ import SwiftUI
 
 extension Notification.Name {
     static let devEnvStatusBarAction = Notification.Name("DevEnv.statusBarAction")
+    static let devEnvCheckForUpdates = Notification.Name("DevEnv.checkForUpdates")
 }
 
 enum DevEnvStatusBarAction: String {
@@ -111,6 +112,8 @@ enum WindowFillToggle {
 final class DevEnvAppDelegate: NSObject, NSApplicationDelegate {
     let projectsModel: ProjectsViewModel
     let runCoordinator: ProjectRunCoordinator
+    let updateController: UpdateController
+    private lazy var updateWindowController = UpdateWindowController(controller: updateController)
     private(set) var statusItem: NSStatusItem?
     private(set) var statusMenu = NSMenu()
     private var cancellables: Set<AnyCancellable> = []
@@ -141,6 +144,7 @@ final class DevEnvAppDelegate: NSObject, NSApplicationDelegate {
     ) {
         self.projectsModel = projectsModel
         self.runCoordinator = runCoordinator
+        self.updateController = UpdateController()
         self.statusBarRunPageHandoff = statusBarRunPageHandoff
         super.init()
         observeStatusMenuInputs()
@@ -208,6 +212,12 @@ final class DevEnvAppDelegate: NSObject, NSApplicationDelegate {
         Publishers.Merge(runCoordinator.objectWillChange, projectsModel.objectWillChange)
             .sink { [weak self] _ in
                 Task { @MainActor in self?.rebuildStatusMenu() }
+            }
+            .store(in: &cancellables)
+
+        NotificationCenter.default.publisher(for: .devEnvCheckForUpdates)
+            .sink { [weak self] _ in
+                Task { @MainActor in self?.checkForUpdates(userInitiated: true) }
             }
             .store(in: &cancellables)
     }
@@ -346,6 +356,10 @@ final class DevEnvAppDelegate: NSObject, NSApplicationDelegate {
         globalMenu.addItem(stop)
         global.submenu = globalMenu
         menu.addItem(global)
+        menu.addItem(.separator())
+        let checkUpdates = menuAction("检查更新…", symbol: "arrow.triangle.2.circlepath",
+                                      action: #selector(checkForUpdatesMenu(_:)))
+        menu.addItem(checkUpdates)
         menu.addItem(.separator())
         let quit = menuAction("退出 DevEnv…", symbol: "rectangle.portrait.and.arrow.right", action: #selector(quitDevEnv(_:)))
         quit.keyEquivalent = "q"
@@ -549,6 +563,30 @@ final class DevEnvAppDelegate: NSObject, NSApplicationDelegate {
         NSApplication.shared.terminate(nil)
     }
 
+    // MARK: - 检查更新
+
+    @objc private func checkForUpdatesMenu(_: NSMenuItem) {
+        checkForUpdates(userInitiated: true)
+    }
+
+    /// 检查更新。用户主动触发时总会呈现窗口；启动时的自动检查只在发现新版本且未被跳过时呈现。
+    func checkForUpdates(userInitiated: Bool) {
+        Task { @MainActor in
+            await updateController.check()
+            if userInitiated || (updateController.hasAvailableUpdate && !updateController.isCurrentUpdateSkipped) {
+                updateWindowController.show()
+            }
+        }
+    }
+
+    /// 启动后静默检查一次；发现新版本时弹出更新窗口。
+    func autoCheckForUpdatesOnLaunch() async {
+        let shouldPresent = await updateController.autoCheckOnLaunch()
+        if shouldPresent {
+            updateWindowController.show()
+        }
+    }
+
     private func postStatusBarAction(
         _ action: DevEnvStatusBarAction,
         userInfo: [AnyHashable: Any]? = nil
@@ -573,6 +611,13 @@ struct DevEnvApp: App {
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1280, height: 800)
+        .commands {
+            CommandGroup(after: .appInfo) {
+                Button("检查更新…") {
+                    appDelegate.checkForUpdates(userInitiated: true)
+                }
+            }
+        }
     }
 }
 
@@ -589,6 +634,9 @@ private struct DevEnvMainWindowContent: View {
             }
             .onDisappear {
                 appDelegate.disconnectMainWindow()
+            }
+            .task {
+                await appDelegate.autoCheckForUpdatesOnLaunch()
             }
     }
 }

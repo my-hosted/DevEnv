@@ -936,7 +936,7 @@ final class ProjectRunSessionsTests: XCTestCase {
 
         XCTAssertEqual(
             appDelegate.statusMenu.items.map(\.title),
-            ["打开 DevEnv", "", "0 个运行中", "", "默认工作区", "暂无运行配置", "", "启动未运行配置", "停止此工作区", "", "全局操作", "", "退出 DevEnv…"]
+            ["打开 DevEnv", "", "0 个运行中", "", "默认工作区", "暂无运行配置", "", "启动未运行配置", "停止此工作区", "", "全局操作", "", "检查更新…", "", "退出 DevEnv…"]
         )
         XCTAssertFalse(appDelegate.statusMenu.item(withTitle: "全局操作")?.submenu?.item(withTitle: "全部工作区启动")?.isEnabled ?? true)
         XCTAssertFalse(appDelegate.statusMenu.item(withTitle: "全局操作")?.submenu?.item(withTitle: "全部工作区停止")?.isEnabled ?? true)

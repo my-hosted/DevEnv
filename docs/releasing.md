@@ -83,7 +83,7 @@ v0.2.4 已于 2026-10-19 发布为 Prerelease。annotated Tag 指向 master 合�
 | Apple 公证 | 不执行 |
 | 主产物 | `DevEnv-0.1.0-arm64.dmg` |
 | 校验文件 | `DevEnv-0.1.0-arm64.dmg.sha256` |
-| 自动更新 | 不提供 |
+| 自动更新 | 应用内检查更新与下载安装包（见 [ADR-0017](adr/0017-check-and-download-updates-from-github-releases.md)）；不自动替换安装 |
 
 Private Preview 必须在 Release Notes 中明确说明：
 
@@ -91,6 +91,18 @@ Private Preview 必须在 Release Notes 中明确说明：
 - Gatekeeper 阻止首次打开属于当前版本的已知分发限制。
 - 测试者只应通过“系统设置 → 隐私与安全性”确认打开；不引导全局关闭 Gatekeeper，也不提供递归移除隔离属性的命令。
 - 新版本通过 Private GitHub Release 手动下载，不提供 App 内更新。
+
+## 1.1 应用内检查更新与下载
+
+自引入更新检查起，DevEnv 启动时会在后台静默检查一次公开仓库的 GitHub Releases，并在菜单栏和应用菜单提供「检查更新…」入口。实现见 [ADR-0017](adr/0017-check-and-download-updates-from-github-releases.md)：
+
+- 使用 `/repos/my-hosted/DevEnv/releases` **列表**端点，而不是 `/releases/latest`；因为所有发布都是 `prerelease`，`/latest` 只返回最新稳定版会得到 404。
+- 过滤 `draft`，按语义化版本挑选最新且带 `.dmg` 的版本；默认接受 `prerelease`。
+- 下载在应用内完成：把匹配的 DMG 下载到用户「下载」目录并显示进度，优先用同名 `.sha256` 资源校验，其次使用资产 `digest`。
+- **不自动安装**：下载完成后由用户打开 DMG 手动替换 App。自动替换安装需等 Developer ID 签名与 Apple 公证（issue #77）具备条件后再评估。
+- 「跳过此版本」记录在 `UserDefaults`，不进入发布流程，也不改变任何持久化 schema。
+
+发布时仍需同时上传 `DevEnv-<version>-arm64.dmg` 与 `DevEnv-<version>-arm64.dmg.sha256`，更新检查才能完成校验。
 
 ## 2. 范围冻结与 Release Blocker
 
@@ -402,7 +414,7 @@ Dry Run 失败时，修复必须先进入 `develop`，再通过新的 `develop �
 - Hardened Runtime 正式分发配置；
 - Apple Notary Service 公证；
 - DMG Stapling 与 Gatekeeper 正向评估；
-- 自动更新；
+- 自动更新（自动替换安装）；应用内检查更新与下载已在 [ADR-0017](adr/0017-check-and-download-updates-from-github-releases.md) 中实现；
 - 面向公开仓库或公众分发的许可证、隐私和支持政策。
 
 在测试范围扩大到非仓库成员之前，应优先完成 Developer ID 签名、公证与 Stapling。
