@@ -2452,19 +2452,7 @@ struct ContentView: View {
                 Menu {
                     runConfigurationMenu(configuration)
                 } label: {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 6)
-                            .fill(AppTheme.accent.opacity(0.06))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 6)
-                                    .stroke(AppTheme.accent.opacity(0.18))
-                            )
-                        Image(systemName: "ellipsis")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(AppTheme.accent)
-                    }
-                    .frame(width: 28, height: 28)
-                    .contentShape(Rectangle())
+                    moreActionsMenuLabel()
                 }
                 .menuStyle(.button)
                 .buttonStyle(.plain)
@@ -3698,6 +3686,22 @@ struct ContentView: View {
         .frame(width: 480)
     }
 
+    private func moreActionsMenuLabel() -> some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 6)
+                .fill(AppTheme.accent.opacity(0.06))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(AppTheme.accent.opacity(0.18))
+                )
+            Image(systemName: "ellipsis")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(AppTheme.accent)
+        }
+        .frame(width: 28, height: 28)
+        .contentShape(Rectangle())
+    }
+
     private func projectActionsMenu(_ project: ProjectRecord) -> some View {
         Menu {
             Button("查看运行配置") { openRuns(for: project) }
@@ -3715,9 +3719,15 @@ struct ContentView: View {
             Divider()
             Button("移除项目记录", role: .destructive) { pendingProjectRemovalIDs = [project.id] }
                 .disabled(projectsModel.isScanning || projectsModel.mutationsArePaused)
-        } label: { Image(systemName: "ellipsis").frame(width: 24, height: 24) }
-        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-        .foregroundStyle(AppTheme.accent)
+        } label: {
+            moreActionsMenuLabel()
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .frame(width: 28, height: 28)
+        .contentShape(Rectangle())
+        .help("项目操作")
         .accessibilityLabel("项目操作：\(project.title)")
     }
 
