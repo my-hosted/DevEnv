@@ -1,6 +1,6 @@
 # DevEnv 发版流程
 
-状态：发版自动化已实现；最新已发布版本为 `v0.2.5` Private Preview（Build `11`），2026-11-10。
+状态：发版自动化已实现；最新已发布版本为 `v0.2.6` Private Preview（Build `12`），2026-11-11。
 
 ## 本地发布通道（自 v0.1.1 起）
 
@@ -35,6 +35,12 @@ v0.2.4 已于 2026-10-19 发布为 Prerelease。annotated Tag 指向 master 合�
 2026-11-10，仓库所有者授权在本机（Xcode `27.1`、arm64）完成 `v0.2.5` 的本地验证并发布，以本地完整验证替代 Hosted CI。本版本累计 `v0.2.4` 以来的变更：应用内检查更新与下载并限制检查频率（#114）、项目级环境变量注入（#113）、运行配置平铺视图与拖拽排序（#111）、工作区运行配置拖拽分栏（#110）等。
 
 源码为 `master` 合并提交 `3385db4`，annotated Tag `v0.2.5` 指向该提交。四组发布契约测试通过；`UpdateCheckerTests`（15 项）、`ProjectRunSessionsTests`（93 项）等通过。已知环境问题：`EnvironmentScannerTests.testMachineToolSearchPathSupportsRealCshLoginInitialization` 在本机 `/bin/csh`(tcsh) 下因 `setenv: Too many arguments` 失败；该测试自 `v0.2.4` 起未改动，属本机 tcsh 行为差异，与本次变更无关，未记作已通过。Release 构建、ad-hoc 严格签名、arm64 架构、dSYM UUID（`9E143D9A-6515-38EA-BC9A-19281A859050`）与 DMG 挂载/内容校验通过；DMG SHA-256 为 `c28afc606d059f48858c462e6f2cdb61c7eff5061e7172c20eef8e414bd4ac6d`。上传 Draft Prerelease 后回下载复验一致，再发布为 Prerelease。[Release](https://github.com/my-hosted/DevEnv/releases/tag/v0.2.5)。
+
+### v0.2.6（Build 12）本地构建与发布记录
+
+2026-11-11，仓库所有者确认功能后授权在本机（Xcode `27.1`、arm64）完成 `v0.2.6` 的本地验证并发布，以本地完整验证替代 Hosted CI。本版本累计 `v0.2.5` 以来的变更：运行配置平铺视图交互优化（#115）——卡片顶部启动/停止/重启与名称同排、宽度不足时 hover 显示，平铺入口上移到顶部工具栏并显示每行数量。
+
+源码为 `master` 合并提交 `efd04e0f6ba98a088adba6bab3712f78c715e876`（[PR #116](https://github.com/my-hosted/DevEnv/pull/116)），annotated Tag `v0.2.6` 指向该提交。四组发布契约测试通过；XCTest 共 310 项：`EnvironmentScannerTests`（107 项，1 项已知本机 csh 失败，与 `v0.2.4` 起一致）、`ProjectRunSessionsTests`（93 项，其中真实并发终端测试在负载下波动一次、单独重跑通过）、`ProjectRecordsTests`（51 项）、`ProjectRequirementsTests`（20 项）、`UpdateCheckerTests`（15 项）、`OverviewAttentionTests`（13 项）、`HomebrewServiceManagerTests`（11 项）。Release 构建、ad-hoc 严格签名、arm64 架构、dSYM UUID（`07C37A08-3204-38E0-A66A-0DC145D132E2`）与 DMG 挂载/内容校验通过；DMG SHA-256 为 `e3305b33f70d2899df43ddb7920eb7e98e6b88f6981652af3d000b02ad0ff243`。上传 Draft Prerelease 后回下载复验一致，再发布为 Prerelease。[Release](https://github.com/my-hosted/DevEnv/releases/tag/v0.2.6)。
 
 1. 在 `develop` 更新版本、Build、工作流锁定值和 Release Notes，提交并推送。
 2. 运行四组 `scripts/tests/*-contract-tests.sh` 发布契约测试及完整 XCTest，记录候选 SHA。只有已明确授权使用本地验证替代 Hosted CI，且本地验证通过时，才允许合并 `develop → master` Release PR；在 PR 记录替代原因和证据，不修改失败 CI 的结果。
