@@ -777,6 +777,7 @@ struct ContentView: View {
     @State private var draggingRunConfigurationID: String?
     @State private var runTileDropTargetID: String?
     @State private var runTileDropAfter = false
+    @State private var hoveredRunTileConfigurationID: String?
     @State private var fullscreenRunConfigurationID: String?
     @State private var runSearchText = ""
     @State private var runStatusFilter = RunListStatusFilter.all
@@ -1407,6 +1408,10 @@ struct ContentView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(projectsModel.document.workspaces.isEmpty || projectsModel.mutationsArePaused)
+                if selectedPage == .runs {
+                    runTiledToggleButton
+                    if isRunTiled { runTiledColumnStepper }
+                }
             }
             .fixedSize()
         }
@@ -1414,6 +1419,39 @@ struct ContentView: View {
         .padding(.horizontal, 24)
         .padding(.top, 22)
         .padding(.bottom, 16)
+    }
+
+    private var runTiledToggleButton: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.18)) {
+                if isRunTiled { fullscreenRunConfigurationID = nil }
+                hoveredRunTileConfigurationID = nil
+                isRunTiled.toggle()
+            }
+        } label: {
+            Label(isRunTiled ? "列表" : "平铺", systemImage: isRunTiled ? "list.bullet" : "square.grid.2x2")
+        }
+        .buttonStyle(.bordered)
+        .help(isRunTiled ? "恢复运行配置列表与详情" : "平铺所有运行配置（同时查看多个终端）")
+        .accessibilityLabel(isRunTiled ? "恢复运行配置列表与详情" : "平铺所有运行配置")
+    }
+
+    private var runTiledColumnStepper: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "square.grid.3x2")
+                .foregroundStyle(.secondary)
+            Text("每行").font(.callout).foregroundStyle(.secondary)
+            Stepper(value: $runTiledCardsPerRow, in: runTiledMinimumCardsPerRow...runTiledMaximumCardsPerRow) {
+                Text("\(tiledColumnCount)")
+                    .font(.callout.monospacedDigit())
+                    .frame(minWidth: 14)
+            }
+            .fixedSize()
+            Text("个").font(.callout).foregroundStyle(.secondary)
+        }
+        .controlSize(.regular)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("每行显示 \(tiledColumnCount) 个运行配置")
     }
 
     private var workspaceSwitcher: some View {
@@ -1653,6 +1691,7 @@ struct ContentView: View {
             loadRunTileOrder()
             draggingRunConfigurationID = nil
             runTileDropTargetID = nil
+            hoveredRunTileConfigurationID = nil
             fullscreenRunConfigurationID = nil
         }
         .onChange(of: workspaceRunConfigurationIDs) { _, ids in
@@ -1664,6 +1703,9 @@ struct ContentView: View {
             }
             if let fullscreenRunConfigurationID, !existing.contains(fullscreenRunConfigurationID) {
                 self.fullscreenRunConfigurationID = nil
+            }
+            if let hoveredRunTileConfigurationID, !existing.contains(hoveredRunTileConfigurationID) {
+                self.hoveredRunTileConfigurationID = nil
             }
             if let runTileDropTargetID, !existing.contains(runTileDropTargetID) {
                 self.runTileDropTargetID = nil
@@ -1859,8 +1901,7 @@ struct ContentView: View {
             if let configuration = fullscreenRunTiledConfiguration {
                 runTileFullscreenCard(configuration)
             } else {
-                VStack(alignment: .leading, spacing: 12) {
-                    runTiledToolbar
+                VStack(alignment: .leading, spacing: 0) {
                     if visibleRunConfigurations.isEmpty {
                         ContentUnavailableView {
                             Label(workspaceRunConfigurations.isEmpty ? "没有运行配置" : "没有匹配的运行配置", systemImage: "play.rectangle")
@@ -1891,7 +1932,7 @@ struct ContentView: View {
         let state = session?.state ?? .inactive
         let hasOutput = session?.hasTerminal == true
         return VStack(spacing: 0) {
-            runTileCardHeader(configuration, project: project, state: state, fullscreen: true)
+            runTileCardHeader(configuration, project: project, state: state, cardWidth: .greatestFiniteMagnitude, fullscreen: true)
             Divider().opacity(0.5)
             runTileCardTerminal(
                 configuration,
@@ -1905,41 +1946,6 @@ struct ContentView: View {
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(AppTheme.accent.opacity(0.12)))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onExitCommand { fullscreenRunConfigurationID = nil }
-    }
-
-    private var runTiledToolbar: some View {
-        HStack(spacing: 12) {
-            Button {
-                fullscreenRunConfigurationID = nil
-                withAnimation(.easeInOut(duration: 0.18)) { isRunTiled = false }
-            } label: {
-                Label("返回列表", systemImage: "list.bullet")
-            }
-            .buttonStyle(.bordered)
-            .help("返回运行配置列表与详情")
-            VStack(alignment: .leading, spacing: 1) {
-                Text("运行配置平铺").font(.headline)
-                Text("\(visibleRunConfigurations.count) 个配置 · 拖拽卡片到目标位置松手即可调整顺序")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 0)
-            HStack(spacing: 8) {
-                Image(systemName: "square.grid.3x2")
-                    .foregroundStyle(.secondary)
-                Text("每行").font(.callout).foregroundStyle(.secondary)
-                Stepper(value: $runTiledCardsPerRow, in: runTiledMinimumCardsPerRow...runTiledMaximumCardsPerRow) {
-                    Text("\(tiledColumnCount)")
-                        .font(.callout.monospacedDigit())
-                        .frame(minWidth: 14)
-                }
-                .fixedSize()
-                Text("个").font(.callout).foregroundStyle(.secondary)
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(AppTheme.cardSurface, in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(AppTheme.accent.opacity(0.10)))
     }
 
     private func runTileCard(_ configuration: ProjectRunConfiguration) -> some View {
@@ -1957,7 +1963,7 @@ struct ContentView: View {
         let expandedElsewhere = expandedTerminalConfiguration?.id == configuration.id
         let isDropTarget = runTileDropTargetID == configuration.id && draggingRunConfigurationID != configuration.id
         return VStack(spacing: 0) {
-            runTileCardHeader(configuration, project: project, state: state)
+            runTileCardHeader(configuration, project: project, state: state, cardWidth: cardWidth)
             Divider().opacity(0.5)
             runTileCardTerminal(
                 configuration,
@@ -1984,6 +1990,13 @@ struct ContentView: View {
         }
         .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.12), value: isDropTarget)
+        .onHover { hovering in
+            if hovering {
+                hoveredRunTileConfigurationID = configuration.id
+            } else if hoveredRunTileConfigurationID == configuration.id {
+                hoveredRunTileConfigurationID = nil
+            }
+        }
         .contextMenu { runConfigurationMenu(configuration) }
         .onDrop(
             of: [UTType.text],
@@ -2000,13 +2013,23 @@ struct ContentView: View {
         )
     }
 
+    private let runTileInlineActionsMinWidth: CGFloat = 430
+
     private func runTileCardHeader(
         _ configuration: ProjectRunConfiguration,
         project: ProjectRecord?,
         state: ProjectRunSessionState,
+        cardWidth: CGFloat,
         fullscreen: Bool = false
     ) -> some View {
         let projectUnavailable = (configuration.projectID != nil && project == nil) || project?.availability.isUnavailable == true
+        let session = runCoordinator.session(for: configuration.id)
+        let isClosing = session?.isClosing == true
+        let canStart = state.canStart && configuration.isEnabled && !projectUnavailable
+        let canStop = state.isLive && !isClosing
+        let canRestart = state.canRestart && configuration.isEnabled && !projectUnavailable && !isClosing
+        let showsInlineActions = fullscreen || cardWidth >= runTileInlineActionsMinWidth
+        let isHovered = hoveredRunTileConfigurationID == configuration.id
         return HStack(spacing: 8) {
             if !fullscreen {
                 Image(systemName: "line.3.horizontal")
@@ -2035,66 +2058,134 @@ struct ContentView: View {
             }
             Spacer(minLength: 4)
             projectRunStatusBadge(state, isEnabled: configuration.isEnabled)
-            HStack(spacing: 2) {
-                Button {
-                    toggleRunTileFullscreen(configuration)
-                } label: {
-                    Image(systemName: fullscreen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
-                        .font(.system(size: 12, weight: .semibold))
-                        .frame(width: 24, height: 24)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                .help(fullscreen ? "退出全屏" : "全屏显示该配置")
-                .accessibilityLabel(fullscreen ? "退出全屏" : "全屏显示 \(configuration.name)")
-
-                Button {
-                    if state.isLive { runCoordinator.stopOrCloseTerminal(configurationID: configuration.id) }
-                    else { run(configuration, project: project) }
-                } label: {
-                    Image(systemName: state.isLive ? state.stopActionSymbol : "play.fill")
-                        .font(.system(size: 12, weight: .semibold))
-                        .frame(width: 24, height: 24)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(state.isLive ? Color.red : AppTheme.accent)
-                .disabled(state == .stopping || (!state.isLive && (!configuration.isEnabled || projectUnavailable)))
-                .help(state == .ready ? "关闭终端" : (state.isLive ? "停止运行" : "启动运行"))
-                .accessibilityLabel("\(state.isLive ? state.stopActionTitle : "启动") \(configuration.name)")
-
-                Button {
-                    openRunConfigurationDetail(configuration)
-                } label: {
-                    Image(systemName: "info.circle")
-                        .font(.system(size: 12, weight: .semibold))
-                        .frame(width: 24, height: 24)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                .help("查看配置详情")
-                .accessibilityLabel("查看 \(configuration.name) 的详情")
-
-                Menu {
-                    runConfigurationMenu(configuration)
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 12, weight: .semibold))
-                        .frame(width: 24, height: 24)
-                        .contentShape(Rectangle())
-                }
-                .menuStyle(.button)
-                .buttonStyle(.plain)
-                .menuIndicator(.hidden)
-                .frame(width: 24, height: 24)
-                .help("更多操作")
-                .accessibilityLabel("\(configuration.name) 的更多操作")
+            if showsInlineActions {
+                runTileCardActions(
+                    configuration,
+                    project: project,
+                    state: state,
+                    canStart: canStart,
+                    canStop: canStop,
+                    canRestart: canRestart,
+                    fullscreen: fullscreen
+                )
             }
+            Menu {
+                runConfigurationMenu(configuration)
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 12, weight: .semibold))
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
+            }
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+            .frame(width: 24, height: 24)
+            .help("更多操作")
+            .accessibilityLabel("\(configuration.name) 的更多操作")
         }
         .padding(.horizontal, 10)
         .frame(height: 46)
+        .overlay(alignment: .trailing) {
+            if !showsInlineActions && isHovered {
+                runTileCardActions(
+                    configuration,
+                    project: project,
+                    state: state,
+                    canStart: canStart,
+                    canStop: canStop,
+                    canRestart: canRestart,
+                    fullscreen: fullscreen
+                )
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(AppTheme.cardRaised, in: Capsule())
+                .overlay(Capsule().stroke(AppTheme.accent.opacity(0.18)))
+                .padding(.trailing, 6)
+                .transition(.opacity)
+            }
+        }
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.12), value: isHovered)
+    }
+
+    private func runTileCardActions(
+        _ configuration: ProjectRunConfiguration,
+        project: ProjectRecord?,
+        state: ProjectRunSessionState,
+        canStart: Bool,
+        canStop: Bool,
+        canRestart: Bool,
+        fullscreen: Bool
+    ) -> some View {
+        HStack(spacing: 1) {
+            runTileActionButton(
+                systemImage: "play.fill",
+                tint: AppTheme.accent,
+                disabled: !canStart,
+                help: "启动运行",
+                accessibilityLabel: "启动 \(configuration.name)"
+            ) {
+                run(configuration, project: project)
+            }
+            runTileActionButton(
+                systemImage: state.stopActionSymbol,
+                tint: .red,
+                disabled: !canStop,
+                help: state == .ready ? "关闭终端" : "停止运行",
+                accessibilityLabel: "\(state.stopActionTitle) \(configuration.name)"
+            ) {
+                runCoordinator.stopOrCloseTerminal(configurationID: configuration.id)
+            }
+            runTileActionButton(
+                systemImage: "arrow.clockwise",
+                tint: .secondary,
+                disabled: !canRestart,
+                help: "重启运行",
+                accessibilityLabel: "重启 \(configuration.name)"
+            ) {
+                runCoordinator.restart(configuration, project: project)
+            }
+            runTileActionButton(
+                systemImage: fullscreen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
+                tint: .secondary,
+                disabled: false,
+                help: fullscreen ? "退出全屏" : "全屏显示该配置",
+                accessibilityLabel: fullscreen ? "退出全屏" : "全屏显示 \(configuration.name)"
+            ) {
+                toggleRunTileFullscreen(configuration)
+            }
+            runTileActionButton(
+                systemImage: "info.circle",
+                tint: .secondary,
+                disabled: false,
+                help: "查看配置详情",
+                accessibilityLabel: "查看 \(configuration.name) 的详情"
+            ) {
+                openRunConfigurationDetail(configuration)
+            }
+        }
+    }
+
+    private func runTileActionButton(
+        systemImage: String,
+        tint: Color,
+        disabled: Bool,
+        help: String,
+        accessibilityLabel: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 12, weight: .semibold))
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(tint)
+        .opacity(disabled ? 0.4 : 1)
+        .disabled(disabled)
+        .help(help)
+        .accessibilityLabel(accessibilityLabel)
     }
 
     @ViewBuilder
@@ -2654,16 +2745,6 @@ struct ContentView: View {
                 }
                 Spacer(minLength: 0)
                 projectRunStatusBadge(state, isEnabled: configuration.isEnabled)
-                Button {
-                    withAnimation(.easeInOut(duration: 0.18)) { isRunTiled = true }
-                } label: {
-                    Image(systemName: "square.grid.2x2")
-                        .font(.system(size: 12, weight: .semibold))
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                .help("平铺所有运行配置（同时查看多个终端）")
-                .accessibilityLabel("平铺所有运行配置")
                 Button {
                     isRunDetailVisible = false
                 } label: {
