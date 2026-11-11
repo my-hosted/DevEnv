@@ -777,6 +777,7 @@ struct ContentView: View {
     @State private var draggingRunConfigurationID: String?
     @State private var runTileDropTargetID: String?
     @State private var runTileDropAfter = false
+    @State private var hoveredRunTileConfigurationID: String?
     @State private var fullscreenRunConfigurationID: String?
     @State private var runSearchText = ""
     @State private var runStatusFilter = RunListStatusFilter.all
@@ -1424,6 +1425,7 @@ struct ContentView: View {
         Button {
             withAnimation(.easeInOut(duration: 0.18)) {
                 if isRunTiled { fullscreenRunConfigurationID = nil }
+                hoveredRunTileConfigurationID = nil
                 isRunTiled.toggle()
             }
         } label: {
@@ -1689,6 +1691,7 @@ struct ContentView: View {
             loadRunTileOrder()
             draggingRunConfigurationID = nil
             runTileDropTargetID = nil
+            hoveredRunTileConfigurationID = nil
             fullscreenRunConfigurationID = nil
         }
         .onChange(of: workspaceRunConfigurationIDs) { _, ids in
@@ -1700,6 +1703,9 @@ struct ContentView: View {
             }
             if let fullscreenRunConfigurationID, !existing.contains(fullscreenRunConfigurationID) {
                 self.fullscreenRunConfigurationID = nil
+            }
+            if let hoveredRunTileConfigurationID, !existing.contains(hoveredRunTileConfigurationID) {
+                self.hoveredRunTileConfigurationID = nil
             }
             if let runTileDropTargetID, !existing.contains(runTileDropTargetID) {
                 self.runTileDropTargetID = nil
@@ -1926,7 +1932,7 @@ struct ContentView: View {
         let state = session?.state ?? .inactive
         let hasOutput = session?.hasTerminal == true
         return VStack(spacing: 0) {
-            runTileCardHeader(configuration, project: project, state: state, fullscreen: true)
+            runTileCardHeader(configuration, project: project, state: state, cardWidth: .greatestFiniteMagnitude, fullscreen: true)
             Divider().opacity(0.5)
             runTileCardTerminal(
                 configuration,
@@ -1957,7 +1963,7 @@ struct ContentView: View {
         let expandedElsewhere = expandedTerminalConfiguration?.id == configuration.id
         let isDropTarget = runTileDropTargetID == configuration.id && draggingRunConfigurationID != configuration.id
         return VStack(spacing: 0) {
-            runTileCardHeader(configuration, project: project, state: state)
+            runTileCardHeader(configuration, project: project, state: state, cardWidth: cardWidth)
             Divider().opacity(0.5)
             runTileCardTerminal(
                 configuration,
@@ -1984,6 +1990,13 @@ struct ContentView: View {
         }
         .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.12), value: isDropTarget)
+        .onHover { hovering in
+            if hovering {
+                hoveredRunTileConfigurationID = configuration.id
+            } else if hoveredRunTileConfigurationID == configuration.id {
+                hoveredRunTileConfigurationID = nil
+            }
+        }
         .contextMenu { runConfigurationMenu(configuration) }
         .onDrop(
             of: [UTType.text],
@@ -2000,10 +2013,13 @@ struct ContentView: View {
         )
     }
 
+    private let runTileInlineActionsMinWidth: CGFloat = 430
+
     private func runTileCardHeader(
         _ configuration: ProjectRunConfiguration,
         project: ProjectRecord?,
         state: ProjectRunSessionState,
+        cardWidth: CGFloat,
         fullscreen: Bool = false
     ) -> some View {
         let projectUnavailable = (configuration.projectID != nil && project == nil) || project?.availability.isUnavailable == true
@@ -2012,103 +2028,141 @@ struct ContentView: View {
         let canStart = state.canStart && configuration.isEnabled && !projectUnavailable
         let canStop = state.isLive && !isClosing
         let canRestart = state.canRestart && configuration.isEnabled && !projectUnavailable && !isClosing
-        return VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                if !fullscreen {
-                    Image(systemName: "line.3.horizontal")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 16, height: 26)
-                        .contentShape(Rectangle())
-                        .help("拖动以调整排列")
-                        .onDrag {
-                            draggingRunConfigurationID = configuration.id
-                            return NSItemProvider(object: configuration.id as NSString)
-                        } preview: {
-                            runTileCardDragPreview(configuration)
-                        }
-                        .accessibilityLabel("拖动 \(configuration.name) 调整排列")
-                }
-                runConfigurationLogo(configuration, size: 22)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(configuration.name)
-                        .font(.system(size: 13, weight: .semibold))
-                        .lineLimit(1)
-                    Text(project?.title ?? (configuration.projectID == nil ? "独立运行" : configuration.missingProjectTitle))
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-                Spacer(minLength: 4)
-                projectRunStatusBadge(state, isEnabled: configuration.isEnabled)
-                Menu {
-                    runConfigurationMenu(configuration)
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 12, weight: .semibold))
-                        .frame(width: 24, height: 24)
-                        .contentShape(Rectangle())
-                }
-                .menuStyle(.button)
-                .buttonStyle(.plain)
-                .menuIndicator(.hidden)
-                .frame(width: 24, height: 24)
-                .help("更多操作")
-                .accessibilityLabel("\(configuration.name) 的更多操作")
+        let showsInlineActions = fullscreen || cardWidth >= runTileInlineActionsMinWidth
+        let isHovered = hoveredRunTileConfigurationID == configuration.id
+        return HStack(spacing: 8) {
+            if !fullscreen {
+                Image(systemName: "line.3.horizontal")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 16, height: 26)
+                    .contentShape(Rectangle())
+                    .help("拖动以调整排列")
+                    .onDrag {
+                        draggingRunConfigurationID = configuration.id
+                        return NSItemProvider(object: configuration.id as NSString)
+                    } preview: {
+                        runTileCardDragPreview(configuration)
+                    }
+                    .accessibilityLabel("拖动 \(configuration.name) 调整排列")
             }
-            .padding(.horizontal, 10)
-            .frame(height: 38)
+            runConfigurationLogo(configuration, size: 22)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(configuration.name)
+                    .font(.system(size: 13, weight: .semibold))
+                    .lineLimit(1)
+                Text(project?.title ?? (configuration.projectID == nil ? "独立运行" : configuration.missingProjectTitle))
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 4)
+            projectRunStatusBadge(state, isEnabled: configuration.isEnabled)
+            if showsInlineActions {
+                runTileCardActions(
+                    configuration,
+                    project: project,
+                    state: state,
+                    canStart: canStart,
+                    canStop: canStop,
+                    canRestart: canRestart,
+                    fullscreen: fullscreen
+                )
+            }
+            Menu {
+                runConfigurationMenu(configuration)
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 12, weight: .semibold))
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
+            }
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+            .frame(width: 24, height: 24)
+            .help("更多操作")
+            .accessibilityLabel("\(configuration.name) 的更多操作")
+        }
+        .padding(.horizontal, 10)
+        .frame(height: 46)
+        .overlay(alignment: .trailing) {
+            if !showsInlineActions && isHovered {
+                runTileCardActions(
+                    configuration,
+                    project: project,
+                    state: state,
+                    canStart: canStart,
+                    canStop: canStop,
+                    canRestart: canRestart,
+                    fullscreen: fullscreen
+                )
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(AppTheme.cardRaised, in: Capsule())
+                .overlay(Capsule().stroke(AppTheme.accent.opacity(0.18)))
+                .padding(.trailing, 6)
+                .transition(.opacity)
+            }
+        }
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.12), value: isHovered)
+    }
 
-            HStack(spacing: 2) {
-                runTileActionButton(
-                    systemImage: "play.fill",
-                    tint: AppTheme.accent,
-                    disabled: !canStart,
-                    help: "启动运行",
-                    accessibilityLabel: "启动 \(configuration.name)"
-                ) {
-                    run(configuration, project: project)
-                }
-                runTileActionButton(
-                    systemImage: state.stopActionSymbol,
-                    tint: .red,
-                    disabled: !canStop,
-                    help: state == .ready ? "关闭终端" : "停止运行",
-                    accessibilityLabel: "\(state.stopActionTitle) \(configuration.name)"
-                ) {
-                    runCoordinator.stopOrCloseTerminal(configurationID: configuration.id)
-                }
-                runTileActionButton(
-                    systemImage: "arrow.clockwise",
-                    tint: .secondary,
-                    disabled: !canRestart,
-                    help: "重启运行",
-                    accessibilityLabel: "重启 \(configuration.name)"
-                ) {
-                    runCoordinator.restart(configuration, project: project)
-                }
-                Spacer(minLength: 0)
-                runTileActionButton(
-                    systemImage: fullscreen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
-                    tint: .secondary,
-                    disabled: false,
-                    help: fullscreen ? "退出全屏" : "全屏显示该配置",
-                    accessibilityLabel: fullscreen ? "退出全屏" : "全屏显示 \(configuration.name)"
-                ) {
-                    toggleRunTileFullscreen(configuration)
-                }
-                runTileActionButton(
-                    systemImage: "info.circle",
-                    tint: .secondary,
-                    disabled: false,
-                    help: "查看配置详情",
-                    accessibilityLabel: "查看 \(configuration.name) 的详情"
-                ) {
-                    openRunConfigurationDetail(configuration)
-                }
+    private func runTileCardActions(
+        _ configuration: ProjectRunConfiguration,
+        project: ProjectRecord?,
+        state: ProjectRunSessionState,
+        canStart: Bool,
+        canStop: Bool,
+        canRestart: Bool,
+        fullscreen: Bool
+    ) -> some View {
+        HStack(spacing: 1) {
+            runTileActionButton(
+                systemImage: "play.fill",
+                tint: AppTheme.accent,
+                disabled: !canStart,
+                help: "启动运行",
+                accessibilityLabel: "启动 \(configuration.name)"
+            ) {
+                run(configuration, project: project)
             }
-            .padding(.horizontal, 10)
-            .padding(.bottom, 8)
+            runTileActionButton(
+                systemImage: state.stopActionSymbol,
+                tint: .red,
+                disabled: !canStop,
+                help: state == .ready ? "关闭终端" : "停止运行",
+                accessibilityLabel: "\(state.stopActionTitle) \(configuration.name)"
+            ) {
+                runCoordinator.stopOrCloseTerminal(configurationID: configuration.id)
+            }
+            runTileActionButton(
+                systemImage: "arrow.clockwise",
+                tint: .secondary,
+                disabled: !canRestart,
+                help: "重启运行",
+                accessibilityLabel: "重启 \(configuration.name)"
+            ) {
+                runCoordinator.restart(configuration, project: project)
+            }
+            runTileActionButton(
+                systemImage: fullscreen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
+                tint: .secondary,
+                disabled: false,
+                help: fullscreen ? "退出全屏" : "全屏显示该配置",
+                accessibilityLabel: fullscreen ? "退出全屏" : "全屏显示 \(configuration.name)"
+            ) {
+                toggleRunTileFullscreen(configuration)
+            }
+            runTileActionButton(
+                systemImage: "info.circle",
+                tint: .secondary,
+                disabled: false,
+                help: "查看配置详情",
+                accessibilityLabel: "查看 \(configuration.name) 的详情"
+            ) {
+                openRunConfigurationDetail(configuration)
+            }
         }
     }
 
@@ -2123,7 +2177,7 @@ struct ContentView: View {
         Button(action: action) {
             Image(systemName: systemImage)
                 .font(.system(size: 12, weight: .semibold))
-                .frame(width: 26, height: 24)
+                .frame(width: 24, height: 24)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
