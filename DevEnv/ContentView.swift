@@ -99,8 +99,16 @@ private enum AppTheme {
 final class ProjectTerminalContainerView: NSView {
     private weak var terminalView: NSView?
 
-    func mount(_ terminalView: NSView) {
+    /// 把共享的终端视图挂到这个容器里。
+    /// - Parameter adopting: 新建容器（`makeNSView`）时为 `true`，最新的容器总是接管终端；
+    ///   更新（`false`）时绝不从已持有终端的其他容器手里把它抢回来。否则 SwiftUI 对
+    ///   正在销毁的卡片触发一次「僵尸」`updateNSView`（例如离开平铺网格或经 `GeometryReader`
+    ///   进入单卡全屏时），会把终端重新挂到一个马上被移除的视图上，导致可见的全屏卡片空白。
+    func mount(_ terminalView: NSView, adopting: Bool) {
         self.terminalView = terminalView
+        if !adopting, let currentSuperview = terminalView.superview, currentSuperview !== self {
+            return
+        }
         guard terminalView.superview !== self else { return }
         addSubview(terminalView)
         resizeTerminalIfPossible()
@@ -134,12 +142,12 @@ struct ProjectTerminalView: NSViewRepresentable {
 
     func makeNSView(context _: Context) -> ProjectTerminalContainerView {
         let container = ProjectTerminalContainerView()
-        container.mount(terminalView)
+        container.mount(terminalView, adopting: true)
         return container
     }
 
     func updateNSView(_ container: ProjectTerminalContainerView, context _: Context) {
-        container.mount(terminalView)
+        container.mount(terminalView, adopting: false)
     }
 
     static func dismantleNSView(_ container: ProjectTerminalContainerView, coordinator _: ()) {
