@@ -156,6 +156,14 @@ final class ProjectTerminalContainerView: NSView {
         resizeTerminalIfPossible()
     }
 
+    /// 只把落在「已挂载终端」范围内的点击交给终端。
+    /// 容器自身可能比终端子视图更大（例如布局过渡期间 frame 先变大），若不限制，
+    /// 容器覆盖到的工具栏等透明区域会吞掉点击，表现为按钮可见但完全点不动。
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard let terminalView, terminalView.superview === self else { return nil }
+        return terminalView.hitTest(convert(point, to: terminalView))
+    }
+
     private func resizeTerminalIfPossible() {
         guard bounds.width > 1, bounds.height > 1,
               let terminalView, terminalView.superview === self else { return }
@@ -2924,6 +2932,12 @@ struct ContentView: View {
         }
     }
 
+    private func terminalToolbarIcon(_ systemName: String) -> some View {
+        Image(systemName: systemName)
+            .frame(width: 26, height: 26)
+            .contentShape(Rectangle())
+    }
+
     private func runTerminalPanel(_ configuration: ProjectRunConfiguration) -> some View {
         let session = runCoordinator.session(for: configuration.id)
         let terminal = session?.terminalView as? AdaptiveProjectRunTerminalView
@@ -2935,21 +2949,21 @@ struct ContentView: View {
                 Button {
                     guard let terminal else { return }
                     copy(String(decoding: terminal.terminal.getBufferAsData(), as: UTF8.self))
-                } label: { Image(systemName: "doc.on.doc") }
+                } label: { terminalToolbarIcon("doc.on.doc") }
                 .disabled(!hasOutput || terminal == nil)
                 .help("复制终端输出").accessibilityLabel("复制终端输出")
                 Button { expandedTerminalConfiguration = configuration } label: {
-                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                    terminalToolbarIcon("arrow.up.left.and.arrow.down.right")
                 }
                 .disabled(!hasOutput)
                 .help("放大终端").accessibilityLabel("放大终端")
                 Button { runCoordinator.clearTerminal(configurationID: configuration.id) } label: {
-                    Image(systemName: "trash")
+                    terminalToolbarIcon("trash")
                 }
                 .disabled(!hasOutput)
                 .help("清空终端输出").accessibilityLabel("清空终端输出")
                 if hasOutput {
-                    Button { runCoordinator.closeTerminal(configurationID: configuration.id) } label: { Image(systemName: "xmark") }
+                    Button { runCoordinator.closeTerminal(configurationID: configuration.id) } label: { terminalToolbarIcon("xmark") }
                         .help("关闭终端").accessibilityLabel("关闭终端")
                 }
             }

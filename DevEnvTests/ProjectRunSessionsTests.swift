@@ -3867,6 +3867,32 @@ final class ProjectRunSessionsTests: XCTestCase {
         XCTAssertTrue(terminal.superview === offscreenContainer, "上屏后的容器应接管终端")
         XCTAssertTrue(terminal.window === secondWindow)
     }
+
+    func testTerminalContainerOnlyHitTestsMountedTerminalArea() {
+        let terminal = NSView(frame: NSRect(x: 0, y: 0, width: 200, height: 120))
+        let container = ProjectTerminalContainerView()
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 200, height: 200),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        container.mount(terminal, adopting: true)
+        window.contentView = container
+        window.makeKeyAndOrderFront(nil)
+        window.contentView?.layoutSubtreeIfNeeded()
+        defer { window.close() }
+
+        // resize 会把终端铺满容器；这里手动缩小终端，模拟容器 frame 大于终端可见区域的过渡态。
+        terminal.frame = NSRect(x: 0, y: 0, width: 200, height: 120)
+        XCTAssertNotNil(container.hitTest(NSPoint(x: 10, y: 10)), "终端区域内应命中终端")
+        XCTAssertNil(container.hitTest(NSPoint(x: 10, y: 180)), "终端之外的透明区域不得拦截点击")
+
+        let empty = ProjectTerminalContainerView()
+        empty.frame = NSRect(x: 0, y: 0, width: 200, height: 200)
+        XCTAssertNil(empty.hitTest(NSPoint(x: 10, y: 10)), "未挂载终端的容器不得拦截点击")
+    }
 }
 
 @MainActor
