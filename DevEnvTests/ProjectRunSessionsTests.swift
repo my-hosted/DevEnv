@@ -3776,6 +3776,48 @@ final class ProjectRunSessionsTests: XCTestCase {
         childNeedsCleanup = isRunning(childPID)
         XCTAssertFalse(childNeedsCleanup, "后台子进程仍然存活：\(childPID)")
     }
+
+    func testEnteringTiledFullscreenKeepsTerminalMounted() throws {
+        let terminals = (0 ..< 3).map { _ in NSView() }
+        let model = TiledFullscreenHarnessModel()
+        let host = NSHostingController(rootView: TiledFullscreenHarness(model: model, terminals: terminals))
+        let window = NSWindow(contentViewController: host)
+        window.isReleasedWhenClosed = false
+        window.setContentSize(NSSize(width: 900, height: 700))
+        window.makeKeyAndOrderFront(nil)
+        window.contentView?.layoutSubtreeIfNeeded()
+        defer { window.close() }
+
+        func pump(_ duration: TimeInterval = 0.35) {
+            let deadline = Date().addingTimeInterval(duration)
+            while Date() < deadline {
+                RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.005))
+            }
+        }
+
+        pump()
+        XCTAssertTrue(
+            terminals.allSatisfy { $0.window === window },
+            "平铺网格中每张卡片的终端都应挂载到窗口"
+        )
+
+        let first = terminals[0]
+        withAnimation(.easeInOut(duration: 0.18)) { model.fullscreen = true }
+        pump()
+        XCTAssertNotNil(
+            first.superview,
+            "进入平铺全屏后终端不应从视图树中被摘下，否则全屏卡片会空白"
+        )
+        XCTAssertTrue(first.window === window, "进入平铺全屏后终端应仍显示在同一窗口")
+        XCTAssertGreaterThan(first.frame.height, 100, "全屏终端应占据除卡片头部外的可用高度")
+
+        withAnimation(.easeInOut(duration: 0.18)) { model.fullscreen = false }
+        pump()
+        XCTAssertTrue(
+            terminals.allSatisfy { $0.window === window },
+            "退出全屏回到平铺后每张卡片的终端都应重新挂载"
+        )
+    }
 }
 
 @MainActor
@@ -3843,6 +3885,50 @@ private struct ExpandedTerminalHarness: View {
         .sheet(isPresented: $model.isExpanded) {
             ProjectTerminalView(terminalView: terminalView)
                 .frame(minWidth: 900, minHeight: 500)
+        }
+    }
+}
+
+/// 复现平铺网格与单卡全屏之间切换的视图结构：网格卡片包在 `GeometryReader` 里，
+/// 两条分支都挂载同一个共享终端，用于回归测试终端在分支切换时不被「僵尸」更新抢走。
+@MainActor
+private final class TiledFullscreenHarnessModel: ObservableObject {
+    @Published var fullscreen = false
+}
+
+private struct TiledFullscreenHarness: View {
+    @ObservedObject var model: TiledFullscreenHarnessModel
+    let terminals: [NSView]
+
+    var body: some View {
+        Group {
+            if model.fullscreen {
+                VStack(spacing: 0) {
+                    Text("全屏").frame(height: 46)
+                    Divider()
+                    ProjectTerminalView(terminalView: terminals[0])
+                        .id("terminal-0")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                        ForEach(Array(terminals.enumerated()), id: \.offset) { index, terminal in
+                            GeometryReader { _ in
+                                VStack(spacing: 0) {
+                                    Text("卡片 \(index)").frame(height: 40)
+                                    Divider()
+                                    ProjectTerminalView(terminalView: terminal)
+                                        .id("terminal-\(index)")
+                                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                }
+                            }
+                            .frame(height: 200)
+                        }
+                    }
+                }
+            }
         }
     }
 }
