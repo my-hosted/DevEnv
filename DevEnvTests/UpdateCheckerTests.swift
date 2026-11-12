@@ -244,6 +244,72 @@ final class UpdateCheckerTests: XCTestCase {
         XCTAssertEqual(counter.value, 1, "30 秒冷却内的重复手动检查应被忽略")
     }
 
+    // MARK: - 403 与频率限制区分
+
+    private func classified(
+        _ status: Int,
+        remaining: String? = nil,
+        reset: String? = nil,
+        retryAfter: String? = nil
+    ) -> UpdateError? {
+        UpdateHTTPFailure.error(
+            statusCode: status,
+            headers: .init(rateLimitRemaining: remaining, rateLimitReset: reset, retryAfter: retryAfter),
+            now: Date(timeIntervalSince1970: 1_000_000)
+        )
+    }
+
+    func testSuccessfulStatusIsNotAnError() {
+        XCTAssertNil(classified(200, remaining: "0"))
+    }
+
+    func testForbiddenWithRemainingZeroIsRateLimited() throws {
+        let error = try XCTUnwrap(classified(403, remaining: "0", reset: "1700000000"))
+        guard case .rateLimited(let retryAt) = error else {
+            return XCTFail("期望频率限制，实际为 \(error)")
+        }
+        XCTAssertEqual(retryAt, Date(timeIntervalSince1970: 1_700_000_000))
+    }
+
+    func testForbiddenWithRemainingQuotaIsPlainHTTPStatus() throws {
+        let error = try XCTUnwrap(classified(403, remaining: "57"))
+        guard case .httpStatus(let code) = error else {
+            return XCTFail("期望 HTTP 失败，实际为 \(error)")
+        }
+        XCTAssertEqual(code, 403)
+    }
+
+    func testForbiddenWithoutRateLimitHeadersIsPlainHTTPStatus() throws {
+        let error = try XCTUnwrap(classified(403))
+        guard case .httpStatus(let code) = error else {
+            return XCTFail("期望 HTTP 失败，实际为 \(error)")
+        }
+        XCTAssertEqual(code, 403)
+    }
+
+    func testForbiddenWithRetryAfterIsRateLimited() throws {
+        let error = try XCTUnwrap(classified(403, remaining: "42", retryAfter: "120"))
+        guard case .rateLimited(let retryAt) = error else {
+            return XCTFail("期望频率限制，实际为 \(error)")
+        }
+        XCTAssertEqual(retryAt, Date(timeIntervalSince1970: 1_000_120))
+    }
+
+    func testTooManyRequestsIsRateLimitedEvenWithQuota() throws {
+        let error = try XCTUnwrap(classified(429, remaining: "42"))
+        guard case .rateLimited = error else {
+            return XCTFail("期望频率限制，实际为 \(error)")
+        }
+    }
+
+    func testRateLimitEvidenceOnOtherStatusStaysPlainHTTPStatus() throws {
+        let error = try XCTUnwrap(classified(404, remaining: "0"))
+        guard case .httpStatus(let code) = error else {
+            return XCTFail("期望 HTTP 失败，实际为 \(error)")
+        }
+        XCTAssertEqual(code, 404)
+    }
+
     // MARK: - 辅助
 
     private func writeAndHash(_ data: Data, in directory: URL) throws -> String {

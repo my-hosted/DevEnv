@@ -3818,6 +3818,55 @@ final class ProjectRunSessionsTests: XCTestCase {
             "退出全屏回到平铺后每张卡片的终端都应重新挂载"
         )
     }
+
+    func testOffscreenContainerDoesNotStealTerminalFromVisibleContainer() {
+        let terminal = NSView()
+
+        let visibleContainer = ProjectTerminalContainerView()
+        // 模拟 makeNSView：容器还没进入窗口时先请求接管。
+        visibleContainer.mount(terminal, adopting: true)
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 420, height: 280),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.contentView = visibleContainer
+        window.makeKeyAndOrderFront(nil)
+        window.contentView?.layoutSubtreeIfNeeded()
+        defer { window.close() }
+
+        XCTAssertTrue(terminal.superview === visibleContainer, "首次上屏后终端应挂到可见容器")
+        XCTAssertTrue(terminal.window === window)
+
+        // 模拟切换视图时 SwiftUI 先创建、但还没上屏的容器。它不能在离屏状态抢走终端，
+        // 否则一旦它随后被销毁，可见的卡片就会白屏。
+        let offscreenContainer = ProjectTerminalContainerView()
+        offscreenContainer.mount(terminal, adopting: true)
+        XCTAssertTrue(
+            terminal.superview === visibleContainer,
+            "离屏容器不得抢走可见容器里的终端"
+        )
+        XCTAssertTrue(terminal.window === window)
+
+        // 离屏容器真正上屏后才允许接管终端。
+        let secondWindow = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 420, height: 280),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        secondWindow.isReleasedWhenClosed = false
+        secondWindow.contentView = offscreenContainer
+        secondWindow.makeKeyAndOrderFront(nil)
+        secondWindow.contentView?.layoutSubtreeIfNeeded()
+        defer { secondWindow.close() }
+
+        XCTAssertTrue(terminal.superview === offscreenContainer, "上屏后的容器应接管终端")
+        XCTAssertTrue(terminal.window === secondWindow)
+    }
 }
 
 @MainActor

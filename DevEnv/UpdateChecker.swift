@@ -263,6 +263,47 @@ enum UpdateError: LocalizedError {
     }
 }
 
+// MARK: - 非 2xx 响应归类
+
+/// 判断一次非 2xx 的 HTTP 响应是否真的属于 GitHub 频率限制。
+///
+/// GitHub 的主限流响应通常是 `403` 且 `x-ratelimit-remaining` 为 `0`；次级限流可能返回
+/// `403`/`429` 并附带 `retry-after`。`429` 一定是限流，但其他 `403`（例如仓库无权限、
+/// 请求被拦截）不应被误报成「访问频率受限」。
+enum UpdateHTTPFailure {
+    struct Headers {
+        var rateLimitRemaining: String?
+        var rateLimitReset: String?
+        var retryAfter: String?
+    }
+
+    static func error(statusCode: Int, headers: Headers, now: Date = Date()) -> UpdateError? {
+        guard !(200 ... 299).contains(statusCode) else { return nil }
+
+        let remaining = headers.rateLimitRemaining?.trimmingCharacters(in: .whitespaces)
+        let retryAfterSeconds = headers.retryAfter
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .flatMap { TimeInterval($0) }
+            .flatMap { $0 >= 0 ? $0 : nil }
+
+        let isRateLimited = statusCode == 429
+            || (statusCode == 403 && (remaining == "0" || retryAfterSeconds != nil))
+        guard isRateLimited else { return .httpStatus(statusCode) }
+
+        let retryAt: Date?
+        if let retryAfterSeconds {
+            retryAt = now.addingTimeInterval(retryAfterSeconds)
+        } else if let reset = headers.rateLimitReset
+            .map({ $0.trimmingCharacters(in: .whitespaces) })
+            .flatMap({ TimeInterval($0) }) {
+            retryAt = Date(timeIntervalSince1970: reset)
+        } else {
+            retryAt = nil
+        }
+        return .rateLimited(retryAt: retryAt)
+    }
+}
+
 // MARK: - 更新源
 
 /// 抽象更新源，便于测试替换。
@@ -317,14 +358,14 @@ final class GitHubUpdateService: UpdateService, @unchecked Sendable {
 
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw UpdateError.badResponse }
-        guard http.statusCode == 200 else {
-            if http.statusCode == 403 {
-                let reset = http.value(forHTTPHeaderField: "x-ratelimit-reset")
-                    .flatMap(TimeInterval.init)
-                    .map { Date(timeIntervalSince1970: $0) }
-                throw UpdateError.rateLimited(retryAt: reset)
-            }
-            throw UpdateError.httpStatus(http.statusCode)
+        guard (200 ... 299).contains(http.statusCode) else {
+            let headers = UpdateHTTPFailure.Headers(
+                rateLimitRemaining: http.value(forHTTPHeaderField: "x-ratelimit-remaining"),
+                rateLimitReset: http.value(forHTTPHeaderField: "x-ratelimit-reset"),
+                retryAfter: http.value(forHTTPHeaderField: "retry-after")
+            )
+            throw UpdateHTTPFailure.error(statusCode: http.statusCode, headers: headers)
+                ?? .httpStatus(http.statusCode)
         }
 
         let decoder = JSONDecoder()
