@@ -107,6 +107,14 @@ struct UpdateView: View {
         }
     }
 
+    /// 更新日志至少要能完整显示约 12 行，避免窗口把内容压缩成几行。
+    private var releaseNotesMinHeight: CGFloat {
+        let font = NSFont.preferredFont(forTextStyle: .callout, options: [:])
+        let lineHeight = NSLayoutManager().defaultLineHeight(for: font)
+        // 额外留一点余量，避免 SwiftUI 实际行距略大于 AppKit 行高时只露出 11 行。
+        return ceil(lineHeight * 12) + 24
+    }
+
     private var updateAvailableContent: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
@@ -134,7 +142,7 @@ struct UpdateView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .textSelection(.enabled)
                 }
-                .frame(maxHeight: 220)
+                .frame(minHeight: releaseNotesMinHeight)
             } else {
                 Text("该版本没有附加更新说明。")
                     .font(.callout)

@@ -98,9 +98,11 @@ private enum AppTheme {
 
 final class ProjectTerminalContainerView: NSView {
     private weak var terminalView: NSView?
+    /// 容器还没进入窗口时先记住要接管终端，等真正上屏后再挂载。
+    private var wantsTerminal = false
 
     /// 把共享的终端视图挂到这个容器里。
-    /// - Parameter adopting: 新建容器（`makeNSView`）时为 `true`，最新的容器总是接管终端；
+    /// - Parameter adopting: 新建容器（`makeNSView`）时为 `true`，最新且已经上屏的容器接管终端；
     ///   更新（`false`）时绝不从已持有终端的其他容器手里把它抢回来。否则 SwiftUI 对
     ///   正在销毁的卡片触发一次「僵尸」`updateNSView`（例如离开平铺网格或经 `GeometryReader`
     ///   进入单卡全屏时），会把终端重新挂到一个马上被移除的视图上，导致可见的全屏卡片空白。
@@ -110,6 +112,23 @@ final class ProjectTerminalContainerView: NSView {
             return
         }
         guard terminalView.superview !== self else { return }
+        // 只有已经上屏的容器才能接管共享终端。SwiftUI 在列表/平铺切换以及转场动画里会先
+        // 创建一批还没加入窗口的容器；若此时就把终端从可见容器里抢走，终端会挂到一个随后
+        // 被销毁的离屏容器上，可见的卡片/详情面板就会白屏。等容器真正上屏再接管。
+        guard window != nil else {
+            if adopting { wantsTerminal = true }
+            return
+        }
+        adopt(terminalView)
+    }
+
+    private func adopt(_ terminalView: NSView) {
+        wantsTerminal = false
+        guard terminalView.superview !== self else {
+            resizeTerminalIfPossible()
+            window?.makeFirstResponder(terminalView)
+            return
+        }
         addSubview(terminalView)
         resizeTerminalIfPossible()
         window?.makeFirstResponder(terminalView)
@@ -117,10 +136,17 @@ final class ProjectTerminalContainerView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        if let terminalView { window?.makeFirstResponder(terminalView) }
+        guard window != nil else { return }
+        if wantsTerminal, let terminalView {
+            adopt(terminalView)
+        } else if let terminalView, terminalView.superview === self {
+            resizeTerminalIfPossible()
+            window?.makeFirstResponder(terminalView)
+        }
     }
 
     func unmount() {
+        wantsTerminal = false
         guard let terminalView, terminalView.superview === self else { return }
         terminalView.removeFromSuperview()
     }
@@ -1971,7 +1997,10 @@ struct ContentView: View {
         let expandedElsewhere = expandedTerminalConfiguration?.id == configuration.id
         let isDropTarget = runTileDropTargetID == configuration.id && draggingRunConfigurationID != configuration.id
         return VStack(spacing: 0) {
+            // 右键菜单只挂在卡片头部。终端区域要保留终端自身的手势与右键行为，
+            // 不能在终端上弹出「打开终端 / 编辑配置」这类配置菜单。
             runTileCardHeader(configuration, project: project, state: state, cardWidth: cardWidth)
+                .contextMenu { runConfigurationMenu(configuration) }
             Divider().opacity(0.5)
             runTileCardTerminal(
                 configuration,
@@ -2005,7 +2034,6 @@ struct ContentView: View {
                 hoveredRunTileConfigurationID = nil
             }
         }
-        .contextMenu { runConfigurationMenu(configuration) }
         .onDrop(
             of: [UTType.text],
             delegate: RunTileDropDelegate(
