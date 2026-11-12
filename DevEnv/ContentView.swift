@@ -2948,10 +2948,17 @@ struct ContentView: View {
                 Spacer(minLength: 0)
                 Button {
                     guard let terminal else { return }
-                    copy(String(decoding: terminal.terminal.getBufferAsData(), as: UTF8.self))
+                    if terminal.selectedRange().length > 0 {
+                        terminal.copy(terminal)
+                    } else {
+                        let text = terminal.copyableBufferText()
+                        guard !text.isEmpty else { return }
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(text, forType: .string)
+                    }
                 } label: { terminalToolbarIcon("doc.on.doc") }
                 .disabled(!hasOutput || terminal == nil)
-                .help("复制终端输出").accessibilityLabel("复制终端输出")
+                .help("复制全部终端输出（有选中内容时复制选中）").accessibilityLabel("复制终端输出")
                 Button { expandedTerminalConfiguration = configuration } label: {
                     terminalToolbarIcon("arrow.up.left.and.arrow.down.right")
                 }

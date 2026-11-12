@@ -519,6 +519,21 @@ final class AdaptiveProjectRunTerminalView: LocalProcessTerminalView {
         terminal.changeHistorySize(historyLines)
     }
 
+    /// 供「复制终端输出」使用：去掉宽字符占位产生的 NUL 和滚动历史首尾的空行，
+    /// 避免复制内容里夹着不可见字符或一大段空白。
+    func copyableBufferText() -> String {
+        let raw = String(decoding: terminal.getBufferAsData(kind: .active), as: UTF8.self)
+            .replacingOccurrences(of: "\u{0}", with: "")
+        var lines = raw.components(separatedBy: "\n")
+        while let first = lines.first, first.trimmingCharacters(in: .whitespaces).isEmpty {
+            lines.removeFirst()
+        }
+        while let last = lines.last, last.trimmingCharacters(in: .whitespaces).isEmpty {
+            lines.removeLast()
+        }
+        return lines.joined(separator: "\n")
+    }
+
     private func growHistory(for bytes: ArraySlice<UInt8>) {
         let columns = max(terminal.cols, 1)
         // ponytail: raw bytes can overestimate ANSI/UTF-8 width; use SwiftTerm row callbacks if exposed.

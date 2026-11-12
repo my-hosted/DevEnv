@@ -3868,6 +3868,17 @@ final class ProjectRunSessionsTests: XCTestCase {
         XCTAssertTrue(terminal.window === secondWindow)
     }
 
+    func testTerminalCopyableBufferTextTrimsBlankLinesAndWideCharacterPlaceholders() {
+        let terminal = AdaptiveProjectRunTerminalView(frame: NSRect(x: 0, y: 0, width: 120, height: 40))
+        terminal.feed(text: "\n\n中文\nz\n\n")
+        let text = terminal.copyableBufferText()
+        XCTAssertFalse(text.contains("\u{0}"), "复制文本不应包含宽字符占位产生的 NUL")
+        XCTAssertTrue(text.contains("中文"))
+        XCTAssertTrue(text.contains("z"))
+        XCTAssertFalse(text.hasPrefix("\n"))
+        XCTAssertFalse(text.hasSuffix("\n"))
+    }
+
     func testTerminalContainerOnlyHitTestsMountedTerminalArea() {
         let terminal = NSView(frame: NSRect(x: 0, y: 0, width: 200, height: 120))
         let container = ProjectTerminalContainerView()
