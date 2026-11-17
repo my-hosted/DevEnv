@@ -1,6 +1,6 @@
 # DevEnv 发版流程
 
-状态：发版自动化已实现；最新已发布版本为 `v0.2.9` Private Preview（Build `15`），2026-11-12。
+状态：发版自动化已实现；最新已发布版本为 `v0.2.10` Private Preview（Build `16`），2026-11-17。
 
 ## 本地发布通道（自 v0.1.1 起）
 
@@ -59,6 +59,12 @@ v0.2.4 已于 2026-10-19 发布为 Prerelease。annotated Tag 指向 master 合�
 2026-11-12，仓库所有者在测试终端工具栏时发现按钮失效与复制内容异常，要求创建 issue、提交 `dev`、合并主分支并发布新版，同时明确不要更新本机已安装版本，保留用于手动测试应用内更新。授权在本机（Xcode `27.1`、arm64）完成 `v0.2.9` 的本地验证并发布，以本地完整验证替代 Hosted CI。本版本累计 `v0.2.8` 以来的变更：修复列表态终端工具栏按钮被容器透明区域吞掉点击，以及「复制」内容包含不可见 NUL/首尾空行且忽略选区的问题（#123）。
 
 源码为 `master` 合并提交 `3215dc7f95f15803fc535661a9a2f9ea067147ff`（[PR #124](https://github.com/my-hosted/DevEnv/pull/124)），annotated Tag `v0.2.9` 指向该提交。四组发布契约测试通过；`ProjectRunSessionsTests` 97 项通过（含新增容器命中测试与复制文本测试），其余测试类本轮未改动，沿用 `v0.2.8` 的验证结果。Release 构建、ad-hoc 严格签名、arm64 架构、dSYM UUID（`F65E01E1-773D-387C-B103-7F5880E201A5`）与 DMG 挂载/内容校验通过；DMG SHA-256 为 `cbf14728618774503a17c93f8c1f25fb9463e86049d8702ba05e531d72bb3c18`。上传 Draft Prerelease 后回下载复验一致，再发布为 Prerelease。[Release](https://github.com/my-hosted/DevEnv/releases/tag/v0.2.9)。按所有者要求，本机继续保留已安装的 `v0.2.7`，不安装新版本，用于手动验证应用内更新。
+
+### v0.2.10（Build 16）本地构建与发布记录
+
+2026-11-17，仓库所有者报告重启 Mac 勾选「重新打开窗口」后，菜单栏有 DevEnv 图标但无主窗口，点「打开 DevEnv」无效，要求创建 issue、在 `dev` 修复、合并主分支并发布。授权在本机（Xcode `27.1`、arm64）完成 `v0.2.10` 的本地验证并发布，以本地完整验证替代 Hosted CI。本次修复：主窗口唤起唯一依赖 SwiftUI 单例 `Window` 场景在 `onAppear` 注册的回调，登录恢复/后台启动路径下 SwiftUI 不自动建窗导致回调缺失、菜单栏与 Dock 唤起静默失败；现改为 opener 缺失时由 AppKit 兜底建窗（SwiftUI 场景窗口出现后自动关闭兜底窗口），并在窗口落到所有屏幕之外时校正回主屏（#125）。
+
+源码为 `master` 合并提交 `7c804afd23d5dc82fe39f3d70fe2b283cd940333`（[PR #126](https://github.com/my-hosted/DevEnv/pull/126)），annotated Tag `v0.2.10` 指向该提交。四组发布契约测试通过；完整 XCTest 通过，排除两项与本次改动无关的本机既有环境失败（`testRealConcurrentSessionsRetainLongOutputAcrossWindowRecreationAndExitCleanly` 真实 shell/PTY 集成测试，基线同样失败；`testMachineToolSearchPathSupportsRealCshLoginInitialization` 本机 tcsh 行为差异，自 `v0.2.4` 起既有），并含新增兜底建窗回归测试 `testOpenMainWindowFallsBackToAppKitWindowWhenSwiftUIOpenerIsMissing`。Release 构建、ad-hoc 严格签名、arm64 架构、dSYM UUID（`3648997F-BB17-3776-AF1B-E944468338C6`）与 DMG 挂载/内容校验通过；DMG SHA-256 为 `9ac7865e8cb8ecc7a99049b36f3ee049df7a337489e178b85ad197e869c60852`。上传 Draft Prerelease 后回下载复验摘要与 DMG 内容一致，再发布为 Prerelease。[Release](https://github.com/my-hosted/DevEnv/releases/tag/v0.2.10)。
 
 1. 在 `develop` 更新版本、Build、工作流锁定值和 Release Notes，提交并推送。
 2. 运行四组 `scripts/tests/*-contract-tests.sh` 发布契约测试及完整 XCTest，记录候选 SHA。只有已明确授权使用本地验证替代 Hosted CI，且本地验证通过时，才允许合并 `develop → master` Release PR；在 PR 记录替代原因和证据，不修改失败 CI 的结果。
