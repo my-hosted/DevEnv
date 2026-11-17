@@ -120,6 +120,7 @@ final class DevEnvAppDelegate: NSObject, NSApplicationDelegate {
     private var windowObservers: [NSObjectProtocol] = []
     private var fillDoubleClickMonitor: Any?
     private var mainWindowOpener: (() -> Void)?
+    private var fallbackMainWindow: NSWindow?
     private var isMainWindowReady = false
     private var pendingMainWindowRequest: MainWindowRequest?
     private let statusBarRunPageHandoff: (() -> Void)?
@@ -249,6 +250,8 @@ final class DevEnvAppDelegate: NSObject, NSApplicationDelegate {
     func connectMainWindow(open: @escaping () -> Void) {
         mainWindowOpener = open
         isMainWindowReady = true
+        // SwiftUI 主窗口已经出现，关闭可能存在的 AppKit 兜底窗口，避免出现两个主窗口。
+        dismissFallbackMainWindow()
         deliverPendingMainWindowRequest()
     }
 
@@ -259,10 +262,94 @@ final class DevEnvAppDelegate: NSObject, NSApplicationDelegate {
     func openMainWindow(configurationID: String? = nil, detailTab: String? = nil) {
         pendingMainWindowRequest = MainWindowRequest(configurationID: configurationID, detailTab: detailTab)
         NSApplication.shared.setActivationPolicy(.regular)
-        // Only the SwiftUI Window scene creates windows, including during launch and reopen.
-        mainWindowOpener?()
+        // 正常情况下由 SwiftUI 单例 Window 场景创建并前置主窗口。
+        // 但在「登录时重新打开窗口」等状态恢复 / 后台启动路径下，SwiftUI 不会自动创建 Window 场景窗口，
+        // DevEnvMainWindowContent.onAppear 不会触发，mainWindowOpener 始终为 nil。
+        // 此时 (以及任何窗口已关闭后) 兜底用 AppKit 直接呈现主窗口，避免菜单栏 / Dock 唤起变成静默空操作。
+        if let opener = mainWindowOpener {
+            opener()
+        } else {
+            // 延迟短时间后再兜底建窗：正常启动时 SwiftUI Window 场景会很快自动显示并注册 opener，
+            // 先复查，避免与随后出现的 SwiftUI 窗口重复。
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+                guard let self else { return }
+                if self.mainWindowOpener == nil {
+                    self.presentFallbackMainWindow()
+                }
+            }
+        }
         NSApplication.shared.activate(ignoringOtherApps: true)
+        ensureMainWindowVisible()
         deliverPendingMainWindowRequest()
+    }
+
+    /// 兜底主窗口：当 SwiftUI Window 场景无法自动建窗时，用 AppKit 自持窗口承载同一 ContentView。
+    private func presentFallbackMainWindow() {
+        // 复用已有的兜底窗口（例如关闭后再次唤起）。
+        if let window = fallbackMainWindow {
+            ensureVisibleFrame(for: window)
+            window.makeKeyAndOrderFront(nil)
+            return
+        }
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1280, height: 800),
+            styleMask: [.titled, .closable, .resizable, .miniaturizable],
+            backing: .buffered,
+            defer: false
+        )
+        Self.configureMainWindow(window)
+        window.contentViewController = NSHostingController(rootView: ContentView(
+            projectsModel: projectsModel,
+            runCoordinator: runCoordinator
+        ))
+        fallbackMainWindow = window
+        if let screen = NSScreen.main {
+            let size = NSSize(width: 1280, height: 800)
+            let origin = NSPoint(
+                x: screen.visibleFrame.midX - size.width / 2,
+                y: screen.visibleFrame.midY - size.height / 2
+            )
+            window.setFrame(NSRect(origin: origin, size: size), display: false)
+        }
+        window.makeKeyAndOrderFront(nil)
+    }
+
+    private func dismissFallbackMainWindow() {
+        guard let window = fallbackMainWindow else { return }
+        fallbackMainWindow = nil
+        window.orderOut(nil)
+        window.close()
+    }
+
+    /// 让主窗口落在某块屏幕的可见区域内；若窗口完全落在所有屏幕之外则移回主屏居中。
+    private func ensureMainWindowVisible() {
+        for window in NSApplication.shared.windows {
+            guard window.styleMask.contains(.titled), !(window is NSPanel) else { continue }
+            ensureVisibleFrame(for: window)
+        }
+    }
+
+    private func ensureVisibleFrame(for window: NSWindow) {
+        let frame = window.frame
+        let onAnyScreen = NSScreen.screens.contains { screen in
+            screen.visibleFrame.intersects(frame)
+        }
+        guard !onAnyScreen, let screen = NSScreen.main ?? NSScreen.screens.first else { return }
+        let size = window.frame.size
+        let origin = NSPoint(
+            x: screen.visibleFrame.midX - size.width / 2,
+            y: screen.visibleFrame.midY - size.height / 2
+        )
+        window.setFrame(NSRect(origin: origin, size: size), display: true)
+    }
+
+    static func configureMainWindow(_ window: NSWindow) {
+        window.styleMask.formUnion([.titled, .closable, .resizable, .miniaturizable])
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.titlebarSeparatorStyle = .none
+        window.title = "DevEnv"
+        window.isReleasedWhenClosed = false
     }
 
     private func deliverPendingMainWindowRequest() {
