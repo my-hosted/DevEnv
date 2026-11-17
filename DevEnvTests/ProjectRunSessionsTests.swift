@@ -1499,6 +1499,37 @@ final class ProjectRunSessionsTests: XCTestCase {
         XCTAssertEqual(notifications.count, 1, "重复出现时不能再次发送已经交付的请求")
     }
 
+    func testOpenMainWindowFallsBackToAppKitWindowWhenSwiftUIOpenerIsMissing() async throws {
+        // 模拟「登录时重新打开窗口」的状态恢复 / 后台启动：SwiftUI Window 场景没有自动建窗，
+        // DevEnvMainWindowContent.onAppear 未触发，mainWindowOpener 始终为 nil。
+        // 此时菜单栏 / Dock 唤起也必须能打开主窗口，而不是静默失败。
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let fixture = try ProjectRunTestFixture(directory: directory, configurations: [], projectRoots: [])
+        let delegate = DevEnvAppDelegate(projectsModel: fixture.projectsModel, runCoordinator: fixture.coordinator)
+        let existingWindows = Set(NSApplication.shared.windows.filter { $0.styleMask.contains(.titled) }.map(ObjectIdentifier.init))
+        let activationPolicy = NSApplication.shared.activationPolicy()
+        defer {
+            if let item = delegate.statusItem { NSStatusBar.system.removeStatusItem(item) }
+            for window in NSApplication.shared.windows where window.styleMask.contains(.titled) && !existingWindows.contains(ObjectIdentifier(window)) {
+                window.close()
+            }
+            NSApplication.shared.setActivationPolicy(activationPolicy)
+        }
+
+        // 明确不注册 opener，模拟 SwiftUI 场景缺失。
+        delegate.openMainWindow()
+
+        // 兜底建窗有 0.2s 的延迟复查窗口，等待其触发。
+        try await Task.sleep(nanoseconds: 500_000_000)
+
+        let created = NSApplication.shared.windows.filter {
+            $0.styleMask.contains(.titled) && !existingWindows.contains(ObjectIdentifier($0))
+        }
+        XCTAssertFalse(created.isEmpty, "opener 缺失时必须由 AppKit 兜底创建主窗口")
+        XCTAssertTrue(created.contains { $0.isVisible }, "兜底主窗口必须可见")
+    }
+
     func testPhysicalMemoryReadsCurrentProcess() throws {
         XCTAssertGreaterThan(
             try XCTUnwrap(ProjectRunPhysicalMemory.total(processIDs: [getpid()])),
